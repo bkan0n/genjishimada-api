@@ -1,0 +1,79 @@
+[project]
+name = "genjishimada-api"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aio-pika>=9.5.5",
+    "aiohttp>=3.12.14",
+    "boto3>=1.40.25",
+    "genjipk-sdk",
+    "kaleido==0.2.1",
+    "litestar-asyncpg>=0.4.0",
+    "litestar[standard]>=2.16.0",
+    "msgspec>=0.19.0",
+    "plotly>=6.1.2",
+    "python-dotenv>=1.1.1",
+    "sentry-sdk[litestar]>=2.35.1",
+]
+
+[dependency-groups]
+dev = [
+    "asyncpg-stubs>=0.30.1",
+    "basedpyright>=1.29.2",
+    "complexipy>=4.0.2",
+    "httpx-sse>=0.4.0",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=1.2.0",
+    "pytest-databases[postgres]>=0.14.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.11.12",
+    "types-boto3[boto3]>=1.40.25",
+]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+exclude = ["tests"]
+line-length = 120
+target-version = "py313"
+
+lint.select = [
+    'E',
+    'F',
+    'W',
+    'A',
+    'PL',
+    'I',
+    'SIM',
+    'RUF',
+    'ASYNC',
+    'C4',
+    'INP',
+    'ERA',
+    'SLF',
+    'PIE',
+    'PYI',
+    'ANN',
+    'N',
+    'D',
+]
+lint.ignore = [
+    'ANN002',
+    'ANN003',
+    'D203',
+    'D100',
+    'D101',
+    'D104',
+    'RUF012',
+    'TC002',
+    'D213',
+    'TC001',
+]
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.uv.sources]
+genjipk-sdk = { git = "https://github.com/bkan0n/genjipk-sdk" }

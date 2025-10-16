@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Genji Parkour API Queue Flows</title>
+        <style>
+            /* Theme variables */
+            :root {
+                --ok: #10b981; /* POST */
+                --warn: #3b82f6; /* PUT */
+                --danger: #ef4444; /* DELETE */
+                --ring: #3b82f6;
+                --shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
+            }
+            html[data-theme="dark"] {
+                --bg: #0b0f14;
+                --panel: #111723;
+                --panel-2: #0f1622;
+                --text: #e6eef7;
+                --muted: #9fb1c6;
+                --border: #1f2a3a;
+                --chip: #1e293b;
+                --link: #93c5fd;
+                --shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
+            }
+            html[data-theme="light"] {
+                --bg: #f7fafc;
+                --panel: #ffffff;
+                --panel-2: #f3f7fb;
+                --text: #0b1220;
+                --muted: #4b5563;
+                --border: #e5e7eb;
+                --chip: #eef2f7;
+                --link: #1d4ed8;
+                --shadow: 0 8px 24px rgba(2, 8, 23, 0.08);
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                margin: 0;
+                font:
+                    15px/1.6 Inter,
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    "Helvetica Neue",
+                    Arial,
+                    "Apple Color Emoji",
+                    "Segoe UI Emoji";
+                background: var(--bg);
+                color: var(--text);
+            }
+
+            .container {
+                max-width: 1180px;
+                margin: 0 auto;
+                padding: 24px;
+                display: grid;
+                gap: 24px;
+                grid-template-columns: 280px 1fr;
+            }
+            header.site {
+                grid-column: 1/-1;
+                display: flex;
+                gap: 16px;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .brand {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+            }
+            .logo {
+                width: 36px;
+                height: 36px;
+                border-radius: 12px;
+                display: grid;
+                place-items: center;
+                background: linear-gradient(135deg, #3b82f6, #06b6d4);
+                color: #fff;
+                font-weight: 700;
+                box-shadow: var(--shadow);
+            }
+            .titlewrap h1 {
+                margin: 0;
+                font-size: clamp(20px, 2.4vw, 28px);
+            }
+            .titlewrap p {
+                margin: 2px 0 0;
+                color: var(--muted);
+                font-size: 13px;
+            }
+
+            .toolbar {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }
+            .search {
+                position: relative;
+            }
+            .search input {
+                width: 280px;
+                padding: 10px 12px 10px 36px;
+                border-radius: 12px;
+                border: 1px solid var(--border);
+                background: var(--panel-2);
+                color: var(--text);
+                outline: none;
+            }
+            .search svg {
+                position: absolute;
+                left: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                opacity: 0.7;
+            }
+            .toggle {
+                border: 1px solid var(--border);
+                background: var(--panel-2);
+                color: var(--text);
+                border-radius: 10px;
+                padding: 8px 12px;
+                cursor: pointer;
+            }
+
+            nav#toc {
+                position: sticky;
+                top: 18px;
+                align-self: start;
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 16px;
+                padding: 12px;
+                box-shadow: var(--shadow);
+            }
+            nav#toc h3 {
+                margin: 2px 8px 8px;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.12em;
+                color: var(--muted);
+            }
+            nav#toc ul {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+                display: grid;
+                gap: 4px;
+            }
+            nav#toc a {
+                display: block;
+                padding: 6px 10px;
+                border-radius: 10px;
+                color: var(--text);
+                text-decoration: none;
+                font-size: 14px;
+            }
+            nav#toc a:hover {
+                background: var(--panel-2);
+            }
+
+            main {
+                display: grid;
+                gap: 16px;
+            }
+            .endpoint {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-radius: 18px;
+                padding: 16px 18px;
+                box-shadow: var(--shadow);
+            }
+            .endpoint header {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px 14px;
+                align-items: center;
+            }
+            .method {
+                font-weight: 700;
+                font-size: 12px;
+                padding: 6px 10px;
+                border-radius: 999px;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: #fff;
+            }
+            .method.post {
+                background: var(--ok);
+            }
+            .method.put {
+                background: var(--warn);
+            }
+            .method.delete {
+                background: var(--danger);
+            }
+            .path {
+                background: var(--chip);
+                padding: 6px 10px;
+                border-radius: 10px;
+                border: 1px solid var(--border);
+                font-family:
+                    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                    "Liberation Mono", "Courier New", monospace;
+            }
+            h2 {
+                margin: 0;
+                font-size: 18px;
+            }
+            .badges {
+                display: flex;
+                gap: 8px;
+                margin-left: auto;
+            }
+            .badge {
+                font-size: 12px;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background: var(--panel-2);
+                border: 1px solid var(--border);
+                color: var(--muted);
+            }
+            .meta {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 10px;
+                color: var(--muted);
+            }
+            .meta code {
+                background: var(--chip);
+                padding: 3px 6px;
+                border-radius: 8px;
+                border: 1px solid var(--border);
+            }
+            .sections {
+                display: grid;
+                gap: 10px;
+                margin-top: 12px;
+            }
+            .box {
+                background: var(--panel-2);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 12px;
+            }
+            .box h3 {
+                margin: 0 0 6px;
+                font-size: 13px;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                color: var(--muted);
+            }
+            ul {
+                margin: 8px 0 0 18px;
+            }
+            li {
+                margin: 4px 0;
+            }
+            .actions {
+                display: flex;
+                gap: 8px;
+                margin-top: 12px;
+            }
+            .ghost {
+                border: 1px solid var(--border);
+                background: transparent;
+                color: var(--text);
+                border-radius: 10px;
+                padding: 8px 10px;
+                cursor: pointer;
+            }
+            .ghost:hover {
+                outline: 2px solid var(--ring);
+                outline-offset: 2px;
+            }
+            .footer {
+                grid-column: 1/-1;
+                text-align: center;
+                color: var(--muted);
+                padding: 12px 0 24px;
+            }
+            a {
+                color: var(--link);
+            }
+            @media (max-width: 980px) {
+                .container {
+                    grid-template-columns: 1fr;
+                }
+                nav#toc {
+                    position: static;
+                }
+                .search input {
+                    width: min(100vw - 120px, 420px);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header class="site">
+                <div class="brand">
+                    <div class="logo" aria-hidden="true">API</div>
+                    <div class="titlewrap">
+                        <h1>Genji Parkour API Queue Flows</h1>
+                    </div>
+                </div>
+                <div class="toolbar">
+                    <div class="search" role="search">
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M21 21l-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z"
+                                stroke="currentColor"
+                                stroke-width="1.6"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                        <input
+                            id="q"
+                            type="search"
+                            placeholder="Filter by title, path, or queue…"
+                            aria-label="Filter endpoints"
+                        />
+                    </div>
+                    <a href="/docs" class="toggle" role="button">API Docs</a>
+
+                    <button
+                        class="toggle"
+                        id="themeToggle"
+                        aria-pressed="false"
+                        title="Toggle theme"
+                    >
+                        🌗 Theme
+                    </button>
+                </div>
+            </header>
+
+            <nav id="toc" aria-label="On-page navigation">
+                <h3>Endpoints</h3>
+                <ul id="tocList"></ul>
+            </nav>
+
+            <main id="endpoints">
+                <!-- Create Map -->
+                <article
+                    class="endpoint"
+                    id="create-map"
+                    data-category="Playtests"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path">/api/v3/maps</code>
+                        <h2>Create Map</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.create</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>If <code>map.playtesting</code> is not null</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Creates a playtest thread via bot</li>
+                                <li>
+                                    Associates that thread with a
+                                    <code>playtests.meta</code> row
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="ghost copy" data-copy="/api/v3/maps">
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Cast Playtest Vote (cast) -->
+                <article
+                    class="endpoint"
+                    id="cast-vote"
+                    data-category="Playtests"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path"
+                            >/api/v3/maps/{thread_id}/vote/{user_id}</code
+                        >
+                        <h2>Cast Playtest Vote</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.vote.cast</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>
+                                User has verified completions (<em
+                                    >NOT legacy</em
+                                >) for map
+                            </p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Alerts thread of user vote</li>
+                                <li>Updates view/plot in thread</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/maps/{thread_id}/vote/{user_id}"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Cast Playtest Vote (remove) -->
+                <article
+                    class="endpoint"
+                    id="remove-vote"
+                    data-category="Playtests"
+                    data-method="DELETE"
+                >
+                    <header>
+                        <span class="method delete">DELETE</span>
+                        <code class="path"
+                            >/api/v3/maps/{thread_id}/vote/{user_id}</code
+                        >
+                        <h2>Cast Playtest Vote</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.vote.remove</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>
+                                User has verified completions (<em
+                                    >NOT legacy</em
+                                >) for map
+                            </p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Alerts thread of user vote removal</li>
+                                <li>Updates view/plot in thread</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/maps/{thread_id}/vote/{user_id}"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Approve Playtest -->
+                <article
+                    class="endpoint"
+                    id="approve-playtest"
+                    data-category="Playtests"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path"
+                            >/api/v3/maps/playtests/{thread_id}/approve</code
+                        >
+                        <h2>Approve Playtest</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.vote.approve</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>Map has been finalized due to enough votes</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>
+                                    Sets <code>core.maps.playtesting</code> to
+                                    <code>Approved</code> and
+                                    <code>palytests.meta.completed</code> to
+                                    <code>TRUE</code>
+                                </li>
+                                <li>Posts in newsfeed</li>
+                                <li>Closes thread</li>
+                                <li>Delete verification channel message</li>
+                                <li>
+                                    Updates plot in thread (probably not needed)
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/maps/playtests/{thread_id}/approve"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Force Accept Playtest -->
+                <article
+                    class="endpoint"
+                    id="force-accept"
+                    data-category="Playtests"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path"
+                            >/api/v3/maps/playtests/{thread_id}/force_accept</code
+                        >
+                        <h2>Force Accept Playtest</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.vote.force_accept</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>None</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>
+                                    Sets <code>core.maps.playtesting</code> to
+                                    <code>Approved</code> and
+                                    <code>palytests.meta.completed</code> to
+                                    <code>TRUE</code>
+                                </li>
+                                <li>Posts in newsfeed</li>
+                                <li>Closes thread</li>
+                                <li>Delete verification channel message</li>
+                                <li>
+                                    Updates plot in thread (probably not needed)
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/maps/playtests/{thread_id}/force_accept"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Force Deny Playtest -->
+                <article
+                    class="endpoint"
+                    id="force-deny"
+                    data-category="Playtests"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path"
+                            >/api/v3/maps/playtests/{thread_id}/force_deny</code
+                        >
+                        <h2>Force Deny Playtest</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.vote.force_deny</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>None</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>
+                                    Sets <code>core.maps.playtesting</code> to
+                                    <code>Rejected</code> and
+                                    <code>palytests.meta.completed</code> to
+                                    <code>TRUE</code>
+                                </li>
+                                <li>Posts in newsfeed</li>
+                                <li>Closes thread</li>
+                                <li>Delete verification channel message</li>
+                                <li>
+                                    Updates plot in thread (probably not needed)
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/maps/playtests/{thread_id}/force_deny"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Reset Playtest -->
+                <article
+                    class="endpoint"
+                    id="reset-playtest"
+                    data-category="Playtests"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path"
+                            >/api/v3/maps/playtests/{thread_id}/reset</code
+                        >
+                        <h2>Reset Playtest</h2>
+                        <div class="badges">
+                            <span class="badge">Playtests</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.playtest.vote.force_deny</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>
+                                Completions/votes can be set individually in the
+                                query
+                            </p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Deletes votes for this thread id</li>
+                                <li>Deletes completions for this thread id</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/maps/playtests/{thread_id}/reset"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Submit Completion -->
+                <article
+                    class="endpoint"
+                    id="submit-completion"
+                    data-category="Completions"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path">/api/v3/completions</code>
+                        <h2>Submit Completion</h2>
+                        <div class="badges">
+                            <span class="badge">Completions</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.completion.submission</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>None</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Get completions submission data</li>
+                                <li>Send view to verification channel</li>
+                                <li>
+                                    Edits the completion data with the message
+                                    id
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/completions"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Verify Completion -->
+                <article
+                    class="endpoint"
+                    id="verify-completion"
+                    data-category="Completions"
+                    data-method="PUT"
+                >
+                    <header>
+                        <span class="method put">PUT</span>
+                        <code class="path"
+                            >/api/v3/completions/{record_id}/verification</code
+                        >
+                        <h2>Verify Completion</h2>
+                        <div class="badges">
+                            <span class="badge">Completions</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.completion.verification</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>None</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Gets the completion submission data</li>
+                                <li>
+                                    Sends completion view to completions channel
+                                </li>
+                                <li>
+                                    If verified:
+                                    <ul>
+                                        <li>
+                                            Edits the completion to verified
+                                        </li>
+                                        <li>Sends message if applicable</li>
+                                        <li>Grants XP</li>
+                                        <li>Process Map Mastery</li>
+                                    </ul>
+                                </li>
+                                <li>
+                                    Else:
+                                    <ul>
+                                        <li>Edits completion to false</li>
+                                        <li>Sends message if applicable</li>
+                                    </ul>
+                                </li>
+                                <li>Deletes verification message</li>
+                                <li>Automatic skill rolls</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button
+                            class="ghost copy"
+                            data-copy="/api/v3/completions/{record_id}/verification"
+                        >
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- Create Newsfeed -->
+                <article
+                    class="endpoint"
+                    id="create-newsfeed"
+                    data-category="Newsfeed"
+                    data-method="POST"
+                >
+                    <header>
+                        <span class="method post">POST</span>
+                        <code class="path">/api/v3/newsfeed</code>
+                        <h2>Create Newsfeed</h2>
+                        <div class="badges">
+                            <span class="badge">Newsfeed</span>
+                        </div>
+                    </header>
+                    <div class="meta">
+                        Queue: <code>api.newsfeed.create</code>
+                    </div>
+                    <div class="sections">
+                        <div class="box">
+                            <h3>Conditions</h3>
+                            <p>None</p>
+                        </div>
+                        <div class="box">
+                            <h3>Results</h3>
+                            <ul>
+                                <li>Gets the newsfeed data</li>
+                                <li>Posts in newsfeed channel</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="ghost copy" data-copy="/api/v3/newsfeed">
+                            Copy Path
+                        </button>
+                    </div>
+                </article>
+
+                <!-- TODOs -->
+                <article
+                    class="endpoint"
+                    id="todo"
+                    data-category="TODO"
+                    data-method="INFO"
+                >
+                    <header>
+                        <span
+                            class="method post"
+                            style="
+                                background: transparent;
+                                color: var(--muted);
+                                border: 1px solid var(--border);
+                            "
+                            >TODO</span
+                        >
+                        <h2>Next Up</h2>
+                        <div class="badges">
+                            <span class="badge">Backlog</span>
+                        </div>
+                    </header>
+                    <div class="sections">
+                        <div class="box">
+                            <ul>
+                                <li>Mod map edits queues</li>
+                            </ul>
+                        </div>
+                    </div>
+                </article>
+            </main>
+
+            <div class="footer">Genji Parkour API</div>
+        </div>
+
+        <script>
+            // JS wired after DOM is ready so it works in previews and static hosts
+            document.addEventListener("DOMContentLoaded", () => {
+                // ---- THEME ----
+                const toggle = document.getElementById("themeToggle");
+                const preferred =
+                    localStorage.getItem("theme") ||
+                    (matchMedia("(prefers-color-scheme: dark)").matches
+                        ? "dark"
+                        : "light");
+                const setTheme = (t) => {
+                    document.documentElement.setAttribute("data-theme", t);
+                    toggle.setAttribute("aria-pressed", String(t === "light"));
+                    localStorage.setItem("theme", t);
+                };
+                setTheme(preferred);
+                toggle?.addEventListener("click", () => {
+                    const cur =
+                        document.documentElement.getAttribute("data-theme") ||
+                        "dark";
+                    setTheme(cur === "dark" ? "light" : "dark");
+                });
+
+                // ---- BUILD TOC ----
+                const toc = document.getElementById("tocList");
+                const endpoints = Array.from(
+                    document.querySelectorAll(".endpoint"),
+                );
+                if (toc) {
+                    endpoints.forEach((ep) => {
+                        const title =
+                            ep.querySelector("h2")?.textContent?.trim() ||
+                            "Untitled";
+                        const id = ep.id;
+                        const li = document.createElement("li");
+                        const a = document.createElement("a");
+                        a.href = `#${id}`;
+                        a.textContent = title;
+                        li.appendChild(a);
+                        toc.appendChild(li);
+                    });
+                }
+
+                // ---- SEARCH/FILTER ----
+                const q = document.getElementById("q");
+                const filter = (term) => {
+                    const t = (term || "").toLowerCase();
+                    endpoints.forEach((ep) => {
+                        const hay = ep.textContent.toLowerCase();
+                        ep.style.display = hay.includes(t) ? "" : "none";
+                    });
+                };
+                let timer; // simple debounce for nicer UX
+                q?.addEventListener("input", () => {
+                    clearTimeout(timer);
+                    timer = setTimeout(() => filter(q.value), 80);
+                });
+
+                // ---- COPY PATH BUTTONS ----
+                document.addEventListener("click", (e) => {
+                    const btn = e.target.closest(".copy");
+                    if (!btn) return;
+                    const value = btn.dataset.copy || "";
+                    // Clipboard may be blocked in some sandboxed envs; fail gracefully
+                    if (navigator.clipboard?.writeText) {
+                        navigator.clipboard
+                            .writeText(value)
+                            .then(() => {
+                                const original = btn.textContent;
+                                btn.textContent = "Copied!";
+                                setTimeout(
+                                    () => (btn.textContent = original),
+                                    900,
+                                );
+                            })
+                            .catch(() => {});
+                    }
+                });
+            });
+        </script>
+    </body>
+</html>

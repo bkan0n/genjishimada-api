@@ -1,0 +1,24 @@
+services:
+  genjishimada-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genjishimada-api
+    environment:
+      - API_ENVIRONMENT=${API_ENVIRONMENT}
+      - DEFAULT_DSN=${DEFAULT_DSN}
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASS=${RABBITMQ_PASS}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED1
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+    restart: unless-stopped
+    networks:
+      - genji-network
+
+networks:
+  genji-network:
+    external: true
