@@ -1,17 +1,39 @@
-name: Deployment
+name: Dev Deployment
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  deployments: write
+  contents: write
+  checks: read
+  statuses: read
 
 jobs:
-  deploy:
+  dev-deploy:
+    if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     environment: development
     steps:
+      - name: branch-deploy
+        id: branch-deploy
+        uses: github/branch-deploy@v11.0.0
+        with:
+          trigger: ".deploy"
+          reaction: "eyes"
+          environment: "development"
+          stable_branch: "main"
+          environment_urls: "production|disabled,development|https://testapi.youngnebula.com,staging|disabled"
+          environment_targets: "development"
+          allow_forks: "true"
+          admins: "tylovejoy,Aiapaec64"
+
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch-deploy.outputs.sha }}
 
       - name: Set up SSH key
         run: |
@@ -23,18 +45,18 @@ jobs:
         run: |
           ssh-keyscan -H ${{ secrets.SERVER_HOST_IP }} >> ~/.ssh/known_hosts
 
-      - name: Set up Docker context for prod
+      - name: Set up Docker context for dev
         run: |
-          docker context create prod-server \
+          docker context create dev-server \
             --docker "host=ssh://${{ secrets.SERVER_HOST_USER }}@${{ secrets.SERVER_HOST_IP }}" \
-            --description "Prod server context"
-          docker context use prod-server
+            --description "Dev server context"
+          docker context use dev-server
 
-      - name: Deploy to Remote Prod Server
+      - name: Deploy to Remote Dev Server
         run: |
-          echo "Deploying to Prod Server..."
+          echo "Deploying to Dev Server..."
 
-          docker compose -f docker-compose.yml up -d --build --no-deps --force-recreate
+          docker compose -f docker-compose.dev.yml up -d --build --no-deps --force-recreate
 
         env:
           API_ENVIRONMENT: ${{ secrets.API_ENVIRONMENT }}
