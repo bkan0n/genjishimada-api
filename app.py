@@ -25,7 +25,6 @@ from routes import route_handlers
 from utilities.errors import CustomHTTPException
 
 DEFAULT_DSN = os.getenv("DEFAULT_DSN")
-
 RABBITMQ_USER = os.getenv("RABBITMQ_USER")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST")
@@ -173,3 +172,4 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
 
 
 app = create_app()
+
