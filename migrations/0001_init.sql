@@ -926,4 +926,23 @@ CREATE TABLE IF NOT EXISTS public.analytics (
 CREATE INDEX IF NOT EXISTS analytics_date_idx  ON public.analytics (created_at);
 CREATE INDEX IF NOT EXISTS analytics_command_name_idx ON public.analytics (command_name);
 CREATE INDEX IF NOT EXISTS analytics_command_name_date_idx ON public.analytics (command_name, created_at);
+
+
+
+CREATE TYPE job_status AS ENUM ('queued','processing','succeeded','failed','timeout');
+
+CREATE TABLE public.jobs (
+                           id          uuid PRIMARY KEY,
+                           status      job_status NOT NULL DEFAULT 'queued',
+                           error_code  text,
+                           error_msg   text,
+                           attempts    int NOT NULL DEFAULT 0,
+                           created_at  timestamptz NOT NULL DEFAULT now(),
+                           started_at  timestamptz,
+                           finished_at timestamptz
+);
+
+CREATE INDEX ON public.jobs (status, created_at);
+
+
 COMMIT;
