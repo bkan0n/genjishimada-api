@@ -13,7 +13,7 @@ from litestar import Controller, post
 
 
 class TagsController(Controller):
-    path = "/api/v3/tags"
+    path = "/tags"
 
     # -----------------------------
     # /search
