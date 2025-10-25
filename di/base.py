@@ -58,7 +58,7 @@ class BaseService:
             try:
                 job_id = uuid.uuid4()
                 await self._conn.execute(
-                    "INSERT INTO core.jobs (id, action) VALUES ($1, $2);",
+                    "INSERT INTO public.jobs (id, action) VALUES ($1, $2);",
                     job_id,
                     routing_key,
                 )
