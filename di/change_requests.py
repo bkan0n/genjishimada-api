@@ -5,6 +5,7 @@ from asyncpg import Connection
 from genjipk_sdk.models import ChangeRequestCreateDTO, ChangeRequestReadDTO, StaleChangeRequestReadDTO
 from genjipk_sdk.utilities.types import OverwatchCode
 from litestar.datastructures import State
+from litestar.di import Provide
 
 from .base import BaseService
 
@@ -148,3 +149,6 @@ async def provide_change_requests_service(conn: Connection, state: State) -> Cha
 
     """
     return ChangeRequestsService(conn=conn, state=state)
+
+
+dependencies = {"svc": Provide(provide_change_requests_service)}

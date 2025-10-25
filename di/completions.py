@@ -19,11 +19,13 @@ from genjipk_sdk.models.completions import (
     SuspiciousCompletionWriteDTO,
     UpvoteCreateDTO,
 )
+from genjipk_sdk.models.jobs import JobStatus, SubmitCompletionReturnDTO, UpvoteSubmissionReturnDTO
 from genjipk_sdk.utilities import DifficultyAll
 from genjipk_sdk.utilities.types import OverwatchCode
 from litestar import Request
 from litestar.datastructures import State
 from litestar.status_codes import HTTP_400_BAD_REQUEST
+from msgspec.inspect import UUIDType
 
 from di.base import BaseService
 from utilities.errors import CustomHTTPException
@@ -193,7 +195,7 @@ class CompletionsService(BaseService):
         models = msgspec.convert(rows, list[CompletionReadDTO])
         return models
 
-    async def submit_completion(self, request: Request, data: CompletionCreateDTO) -> int:
+    async def submit_completion(self, request: Request, data: CompletionCreateDTO) -> SubmitCompletionReturnDTO:
         """Submit a new completion record and publish an event.
 
         Args:
@@ -241,13 +243,13 @@ class CompletionsService(BaseService):
             data.video,
             completion,
         )
-        await self.publish_message(
+        job_status = await self.publish_message(
             routing_key="api.completion.submission",
             data=MessageQueueCompletionsCreate(res),
             headers=request.headers,
         )
 
-        return res
+        return SubmitCompletionReturnDTO(job_status, res)
 
     def build_completion_patch_query(self, patch: CompletionPatchDTO) -> tuple[str, list[Any]]:
         """Build a dynamic SQL UPDATE query for patching a completion.
@@ -493,7 +495,12 @@ class CompletionsService(BaseService):
         rows = await self._conn.fetch(query)
         return msgspec.convert(rows, list[PendingVerification])
 
-    async def verify_completion(self, request: Request, record_id: int, data: CompletionVerificationPutDTO) -> None:
+    async def verify_completion(
+        self,
+        request: Request,
+        record_id: int,
+        data: CompletionVerificationPutDTO,
+    ) -> JobStatus:
         """Update verification status for a completion and publish an event.
 
         Args:
@@ -510,11 +517,12 @@ class CompletionsService(BaseService):
             verified_by=data.verified_by,
             reason=data.reason,
         )
-        await self.publish_message(
+        job_status = await self.publish_message(
             routing_key="api.completion.verification",
             data=message_data,
             headers=request.headers,
         )
+        return job_status
 
     async def get_completions_leaderboard(self, code: str, page_number: int, page_size: int) -> list[CompletionReadDTO]:
         """Retrieve the leaderboard for a map.
@@ -1036,7 +1044,7 @@ class CompletionsService(BaseService):
             data.flagged_by,
         )
 
-    async def upvote_submission(self, request: Request, data: UpvoteCreateDTO) -> int:
+    async def upvote_submission(self, request: Request, data: UpvoteCreateDTO) -> UpvoteSubmissionReturnDTO:
         """Upvote a completion submission.
 
         Args:
@@ -1063,13 +1071,16 @@ class CompletionsService(BaseService):
             raise CustomHTTPException(
                 detail="User has already upvoted this completion.", status_code=HTTP_400_BAD_REQUEST
             )
+        job_status = None
         if count != 0 and count % upvote_channel_amount_breakpoint == 0:
             messsage_data = UpvoteUpdateDTO(
                 data.user_id,
                 data.message_id,
             )
-            await self.publish_message(routing_key="api.completion.upvote", data=messsage_data, headers=request.headers)
-        return count
+            job_status = await self.publish_message(
+                routing_key="api.completion.upvote", data=messsage_data, headers=request.headers
+            )
+        return UpvoteSubmissionReturnDTO(job_status, count)
 
     async def get_all_completions(self, page_size: int, page_number: int) -> list[CompletionReadDTO]:
         """Get all completions from most recent.

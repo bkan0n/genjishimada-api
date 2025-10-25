@@ -3,6 +3,7 @@ from typing import Any
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import (
+    JobStatus,
     PlaytestAssociateIDThread,
     PlaytestPatchDTO,
     PlaytestVote,
@@ -96,7 +97,7 @@ class PlaytestService(BaseService):
         average = round(sum(values) / len(values), 2) if values else 0
         return PlaytestVotesAll(player_votes, average)
 
-    async def cast_vote(self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote) -> None:
+    async def cast_vote(self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote) -> JobStatus:
         """Cast or update a vote, then publish MQ.
 
         Args:
@@ -124,9 +125,9 @@ class PlaytestService(BaseService):
             voter_id=user_id,
             difficulty_value=data.difficulty,
         )
-        await self.publish_message(routing_key="api.playtest.vote.cast", data=payload, headers=request.headers)
+        return await self.publish_message(routing_key="api.playtest.vote.cast", data=payload, headers=request.headers)
 
-    async def delete_vote(self, *, request: Request, thread_id: int, user_id: int) -> None:
+    async def delete_vote(self, *, request: Request, thread_id: int, user_id: int) -> JobStatus:
         """Remove a user's vote, then publish MQ.
 
         Args:
@@ -139,7 +140,7 @@ class PlaytestService(BaseService):
         await self._conn.execute(q, thread_id, user_id)
 
         payload = PlaytestVoteRemovedMQ(thread_id=thread_id, voter_id=user_id)
-        await self.publish_message(routing_key="api.playtest.vote.remove", data=payload, headers=request.headers)
+        return await self.publish_message(routing_key="api.playtest.vote.remove", data=payload, headers=request.headers)
 
     async def delete_all_votes(self, *, state: State, thread_id: int) -> None:
         """Remove all votes for a playtest (used by moderators).
@@ -211,7 +212,7 @@ class PlaytestService(BaseService):
         *,
         thread_id: int,
         verifier_id: int,
-    ) -> None:
+    ) -> JobStatus:
         """Approve a map's playtest.
 
         Marks the map as approved, updates its difficulty, and completes the playtest metadata.
@@ -258,7 +259,7 @@ class PlaytestService(BaseService):
             verifier_id=verifier_id,
             primary_creator_id=primary_creator_id,
         )
-        await self.publish_message(
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.approve",
             data=payload,
@@ -271,7 +272,7 @@ class PlaytestService(BaseService):
         thread_id: int,
         difficulty: DifficultyAll,
         verifier_id: int,
-    ) -> None:
+    ) -> JobStatus:
         """Force accept a playtest regardless of normal flow.
 
         Sets the map as approved, updates difficulty, and marks the playtest as completed.
@@ -306,7 +307,7 @@ class PlaytestService(BaseService):
             difficulty=difficulty,
             verifier_id=verifier_id,
         )
-        await self.publish_message(
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.force_accept",
             data=payload,
@@ -319,7 +320,7 @@ class PlaytestService(BaseService):
         thread_id: int,
         verifier_id: int,
         reason: str,
-    ) -> None:
+    ) -> JobStatus:
         """Force deny a playtest.
 
         Marks the map as rejected, hides it, and completes the playtest metadata.
@@ -350,7 +351,7 @@ class PlaytestService(BaseService):
             verifier_id=verifier_id,
             reason=reason,
         )
-        await self.publish_message(
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.force_deny",
             data=payload,
@@ -365,7 +366,7 @@ class PlaytestService(BaseService):
         reason: str,
         remove_votes: bool,
         remove_completions: bool,
-    ) -> None:
+    ) -> JobStatus:
         """Reset a playtest.
 
         Optionally removes votes and/or completions, while leaving the map entry intact.
@@ -393,7 +394,7 @@ class PlaytestService(BaseService):
             remove_votes=remove_votes,
             remove_completions=remove_completions,
         )
-        await self.publish_message(
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.reset",
             data=payload,

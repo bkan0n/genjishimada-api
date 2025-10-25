@@ -1,9 +1,12 @@
 import typing
+import uuid
 from logging import getLogger
+from uuid import UUID, uuid4
 
 import aio_pika
 import msgspec
 from asyncpg import Connection
+from genjipk_sdk.models import JobStatus
 from litestar.datastructures import Headers, State
 
 log = getLogger(__name__)
@@ -31,22 +34,20 @@ class BaseService:
         routing_key: str,
         data: msgspec.Struct | list[msgspec.Struct],
         headers: Headers,
-    ) -> None:
+    ) -> JobStatus:
         """Publish a message to RabbitMQ.
 
         Args:
-            state (State): The app State.
-            pytest_enabled (bool): Whether pytest is enabled.
             data (msgspec.Struct | list[msgspec.Struct]): The message data.
             routing_key (str, optional): The RabbitMQ message routing key.
-            extra_headers (dict, optional): Additional headers.
-
+            headers (dict, optional): Headers.
+            correlation_id (UUID): A job id.
         """
         message_body = msgspec.json.encode(data)
 
         if headers.get("X-PYTEST-ENABLED") == "1":
             log.debug("Pytest in progress, skipping queue.")
-            return
+            return JobStatus(uuid4(), "succeeded")
 
         log.info("[→] Preparing to publish RabbitMQ message")
         log.debug("Routing key: %s", routing_key)
@@ -55,8 +56,15 @@ class BaseService:
 
         async with self._state.mq_channel_pool.acquire() as channel:
             try:
+                job_id = uuid.uuid4()
+                await self._conn.execute(
+                    "INSERT INTO core.jobs (id, action) VALUES ($1, $2);",
+                    job_id,
+                    routing_key,
+                )
                 message = aio_pika.Message(
                     message_body,
+                    correlation_id=str(job_id),
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                     headers=headers.dict(),  # pyright: ignore[reportArgumentType]
                 )
@@ -65,5 +73,7 @@ class BaseService:
                     routing_key=routing_key,
                 )
                 log.info("[✓] Published RabbitMQ message to queue '%s'", routing_key)
+                return JobStatus(id=job_id, status="queued")
             except Exception:
                 log.exception("[!] Failed to publish message to RabbitMQ queue '%s'", routing_key)
+                return JobStatus(job_id, "failed", "", "Failed to send message.")

@@ -24,6 +24,7 @@ from genjipk_sdk.models import (
     QualityValueDTO,
     TrendingMapReadDTO,
 )
+from genjipk_sdk.models.jobs import CreateMapReturnDTO
 from genjipk_sdk.utilities import (
     DIFFICULTY_MIDPOINTS,
     DIFFICULTY_RANGES_ALL,
@@ -693,7 +694,7 @@ def _handle_exceptions(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable
 
 class MapService(BaseService):
     @_handle_exceptions
-    async def create_map(self, data: MapCreateDTO, request: Request) -> MapReadDTO:
+    async def create_map(self, data: MapCreateDTO, request: Request) -> CreateMapReturnDTO:
         """Create a map.
 
         Within a transaction, inserts the core map row and all related data (creators, guide,
@@ -715,15 +716,17 @@ class MapService(BaseService):
             await self._insert_mechanics(map_id, data.mechanics, remove_existing=False)
             await self._insert_restrictions(map_id, data.restrictions, remove_existing=False)
             await self._insert_medals(map_id, data.medals, remove_existing=False)
+            job_status = None
             if data.playtesting == "In Progress":
                 metadata = PlaytestCreatePartialDTO(data.code, data.difficulty)
                 playtest_id = await self.create_playtest_meta_partial(metadata)
                 message_data = MessageQueueCreatePlaytest(data.code, playtest_id)
-                await self.publish_message(
+                job_status = await self.publish_message(
                     routing_key="api.playtest.create", data=message_data, headers=request.headers
                 )
 
-        return await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        return CreateMapReturnDTO(job_status, map_data)
 
     @_handle_exceptions
     async def patch_map(self, code: OverwatchCode, data: MapPatchDTO) -> MapReadDTO:

@@ -1,5 +1,5 @@
 import litestar
-from genjipk_sdk.models import PlaytestAssociateIDThread, PlaytestPatchDTO, PlaytestVote, PlaytestVotesAll
+from genjipk_sdk.models import JobStatus, PlaytestAssociateIDThread, PlaytestPatchDTO, PlaytestVote, PlaytestVotesAll
 from genjipk_sdk.models.maps import (
     PlaytestApproveCreate,
     PlaytestForceAcceptCreate,
@@ -67,7 +67,7 @@ class PlaytestController(litestar.Controller):
     )
     async def cast_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, data: PlaytestVote, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Cast a vote for a playtest.
 
         Args:
@@ -78,7 +78,7 @@ class PlaytestController(litestar.Controller):
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.cast_vote(
+        return await playtest_svc.cast_vote(
             request=request,
             thread_id=thread_id,
             user_id=user_id,
@@ -92,7 +92,7 @@ class PlaytestController(litestar.Controller):
     )
     async def delete_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Delete a user's vote for a playtest.
 
         Args:
@@ -102,7 +102,7 @@ class PlaytestController(litestar.Controller):
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.delete_vote(request=request, thread_id=thread_id, user_id=user_id)
+        return await playtest_svc.delete_vote(request=request, thread_id=thread_id, user_id=user_id)
 
     @litestar.delete(
         "/{thread_id:int}/vote",
@@ -185,7 +185,7 @@ class PlaytestController(litestar.Controller):
     )
     async def approve_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestApproveCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Approve a playtest.
 
         Args:
@@ -195,7 +195,7 @@ class PlaytestController(litestar.Controller):
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.approve(
+        return await playtest_svc.approve(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,
@@ -208,7 +208,7 @@ class PlaytestController(litestar.Controller):
     )
     async def force_accept_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestForceAcceptCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Force accept a playtest.
 
         Args:
@@ -218,7 +218,7 @@ class PlaytestController(litestar.Controller):
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.force_accept(
+        return await playtest_svc.force_accept(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,
@@ -232,7 +232,7 @@ class PlaytestController(litestar.Controller):
     )
     async def force_deny_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestForceDenyCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Force deny a playtest.
 
         Args:
@@ -242,7 +242,7 @@ class PlaytestController(litestar.Controller):
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.force_deny(
+        return await playtest_svc.force_deny(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,
@@ -256,7 +256,7 @@ class PlaytestController(litestar.Controller):
     )
     async def reset_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestResetCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Reset a playtest to its initial state.
 
         Args:
@@ -266,7 +266,7 @@ class PlaytestController(litestar.Controller):
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.reset(
+        return await playtest_svc.reset(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,

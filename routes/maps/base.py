@@ -31,6 +31,7 @@ from genjipk_sdk.models import (
     QualityValueDTO,
     TrendingMapReadDTO,
 )
+from genjipk_sdk.models.jobs import CreateMapReturnDTO
 from genjipk_sdk.utilities import DifficultyTop
 from genjipk_sdk.utilities.types import (
     GuideURL,
@@ -385,7 +386,7 @@ class BaseMapsController(litestar.Controller):
         data: MapCreateDTO,
         newsfeed: NewsfeedService,
         users: UserService,
-    ) -> MapReadDTO:
+    ) -> CreateMapReturnDTO:
         """Submit a map of any type.
 
         Args:
@@ -399,14 +400,14 @@ class BaseMapsController(litestar.Controller):
             MapReadDTO: Created map.
 
         """
-        map_data = await svc.create_map(data, request)
+        _data = await svc.create_map(data, request)
         if data.playtesting == "Approved":
             event_payload = NewsfeedNewMap(
-                code=map_data.code,
-                map_name=map_data.map_name,
-                difficulty=map_data.difficulty,
-                creators=[x.name for x in map_data.creators],
-                banner_url=map_data.map_banner,
+                code=_data.data.code,
+                map_name=_data.data.map_name,
+                difficulty=_data.data.difficulty,
+                creators=[x.name for x in _data.data.creators],
+                banner_url=_data.data.map_banner,
                 official=data.official,
             )
 
@@ -418,7 +419,7 @@ class BaseMapsController(litestar.Controller):
             )
             await newsfeed.create_and_publish(event, headers=request.headers)
 
-        return map_data
+        return _data
 
     async def _generate_patch_newsfeed(
         self,

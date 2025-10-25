@@ -4,6 +4,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING
 
 import msgspec
+from genjipk_sdk.models.jobs import CreatePublishNewsfeedReturnDTO
 from genjipk_sdk.models.newsfeed import NewsfeedEvent, NewsfeedQueueMessage
 from litestar.datastructures import Headers
 
@@ -23,14 +24,14 @@ class NewsfeedService(BaseService):
         event: NewsfeedEvent,
         *,
         headers: Headers,
-    ) -> int:
+    ) -> CreatePublishNewsfeedReturnDTO:
         """Insert a newsfeed event and publish its ID to Rabbit.
 
         Args:
             event (NewsfeedEvent): The event payload to persist.
             routing_key (str | None, optional): Override for the publish routing key. Defaults to the service default.
             pytest_enabled (bool, optional): If True, publish using test mode in the publisher. Defaults to False.
-            extra_headers (dict | None, optional): Additional headers to include in the published message.
+            headers (dict | None, optional): Additional headers to include in the published message.
 
         Returns:
             int: The newly created newsfeed event ID.
@@ -39,12 +40,12 @@ class NewsfeedService(BaseService):
         q = "INSERT INTO newsfeed (timestamp, payload) VALUES ($1, $2::jsonb) RETURNING id;"
         payload_obj = msgspec.to_builtins(event.payload)
         new_id = await self._conn.fetchval(q, event.timestamp, payload_obj)
-        await self.publish_message(
+        job_status = await self.publish_message(
             routing_key="api.newsfeed.create",
             data=NewsfeedQueueMessage(newsfeed_id=new_id),
             headers=headers,
         )
-        return new_id
+        return CreatePublishNewsfeedReturnDTO(job_status, new_id)
 
     async def get_event(self, id_: int) -> NewsfeedEvent | None:
         """Fetch a single newsfeed event by ID.

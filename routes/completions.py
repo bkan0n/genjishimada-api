@@ -15,6 +15,7 @@ from genjipk_sdk.models.completions import (
     SuspiciousCompletionWriteDTO,
     UpvoteCreateDTO,
 )
+from genjipk_sdk.models.jobs import JobStatus, SubmitCompletionReturnDTO, UpvoteSubmissionReturnDTO
 from genjipk_sdk.utilities import DifficultyAll
 from genjipk_sdk.utilities.types import OverwatchCode
 from litestar import Controller, Request, get, patch, post, put
@@ -91,7 +92,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         data: CompletionCreateDTO,
-    ) -> int:
+    ) -> SubmitCompletionReturnDTO:
         """Submit a new completion.
 
         Args:
@@ -185,7 +186,7 @@ class CompletionsController(Controller):
         request: Request,
         record_id: int,
         data: CompletionVerificationPutDTO,
-    ) -> None:
+    ) -> JobStatus:
         """Verify or reject a completion.
 
         Args:
@@ -276,7 +277,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         data: UpvoteCreateDTO,
-    ) -> int:
+    ) -> UpvoteSubmissionReturnDTO:
         """Upvote a completion submission.
 
         Args:
