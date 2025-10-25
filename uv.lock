@@ -454,7 +454,7 @@ wheels = [
 [[package]]
 name = "genjipk-sdk"
 version = "0.1.0"
-source = { git = "https://github.com/bkan0n/genjipk-sdk#174b3a4be26280c03305d3378640e1b50c263949" }
+source = { git = "https://github.com/bkan0n/genjipk-sdk#f1abd0e9c8d4896bac71f90afa6691ef481d480f" }
 dependencies = [
     { name = "hatchling" },
     { name = "msgspec" },
