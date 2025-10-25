@@ -12,10 +12,10 @@ class InternalJobsController(Controller):
     tags = ["Internal"]
     dependencies = {"svc": Provide(provide_internal_jobs_service)}
 
-    @get("/{job_id}")
+    @get("/{job_id:str}")
     async def get_job(self, svc: InternalJobsService, job_id: uuid.UUID) -> JobStatus:
         return await svc.get_job(job_id)
 
-    @patch("/{job_id}", include_in_schema=False)
+    @patch("/{job_id:str}", include_in_schema=False)
     async def update_job(self, svc: InternalJobsService, job_id: uuid.UUID, data: JobUpdate) -> None:
         return await svc.update_job(job_id, data)
