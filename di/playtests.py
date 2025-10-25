@@ -1,5 +1,6 @@
 from typing import Any
 
+import asyncpg
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import (
@@ -22,6 +23,8 @@ from genjipk_sdk.models.maps import (
 from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll
 from litestar import Request
 from litestar.datastructures import State
+from litestar.exceptions import HTTPException
+from litestar.status_codes import HTTP_400_BAD_REQUEST
 
 from utilities.errors import CustomHTTPException
 
@@ -117,9 +120,13 @@ class PlaytestService(BaseService):
             ON CONFLICT (user_id, map_id, playtest_thread_id) DO UPDATE
             SET difficulty = EXCLUDED.difficulty, updated_at = now();
         """
-        async with self._conn.transaction():
+        try:
             await self._conn.execute(q, user_id, thread_id, data.difficulty, data.code)
-
+        except asyncpg.exceptions.CheckViolationError:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                extra={"msg": "This user does not have a verified, non-legacy record associated with this map code"},
+            )
         payload = PlaytestVoteCastMQ(
             thread_id=thread_id,
             voter_id=user_id,
