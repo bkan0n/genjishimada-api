@@ -726,6 +726,18 @@ class MapService(BaseService):
                 )
 
         map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{type(map_data)}")
+        log.info(f"\n\n\n\n{map_data}")
+        log.info(f"\n\n\n\n")
+        log.info(f"\n\n\n\n")
+        log.info(f"\n\n\n\n")
+        log.info(f"\n\n\n\n")
         return CreateMapReturnDTO(job_status, map_data)
 
     @_handle_exceptions
