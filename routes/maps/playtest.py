@@ -10,6 +10,7 @@ from genjipk_sdk.models.maps import (
 from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.response import Stream
+from litestar.status_codes import HTTP_202_ACCEPTED
 
 from di import MapService, PlaytestService, provide_map_service, provide_playtest_service
 
@@ -64,6 +65,7 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/vote/{user_id:int}",
         summary="Cast Playtest Vote",
         description="Submit a vote for a specific playtest thread on behalf of a user.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def cast_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, data: PlaytestVote, playtest_svc: PlaytestService
@@ -89,6 +91,7 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/vote/{user_id:int}",
         summary="Delete Playtest Vote",
         description="Remove an individual user's vote for a specific playtest thread.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def delete_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, playtest_svc: PlaytestService
@@ -182,6 +185,7 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/approve",
         summary="Approve Playtest",
         description="Approve a playtest, marking it as verified and setting its difficulty rating.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def approve_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestApproveCreate, playtest_svc: PlaytestService
@@ -205,6 +209,7 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/force_accept",
         summary="Force Accept Playtest",
         description="Forcefully accept a playtest regardless of votes, assigning difficulty and verifier.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def force_accept_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestForceAcceptCreate, playtest_svc: PlaytestService
@@ -229,6 +234,7 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/force_deny",
         summary="Force Deny Playtest",
         description="Forcefully deny a playtest regardless of votes, recording the reason for rejection.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def force_deny_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestForceDenyCreate, playtest_svc: PlaytestService
@@ -253,6 +259,7 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/reset",
         summary="Reset Playtest",
         description="Reset a playtest to its initial state, optionally removing votes and completions.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def reset_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestResetCreate, playtest_svc: PlaytestService
