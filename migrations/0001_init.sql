@@ -933,6 +933,7 @@ CREATE TYPE job_status AS ENUM ('queued','processing','succeeded','failed','time
 
 CREATE TABLE public.jobs (
                            id          uuid PRIMARY KEY,
+                           action      text NOT NULL,
                            status      job_status NOT NULL DEFAULT 'queued',
                            error_code  text,
                            error_msg   text,

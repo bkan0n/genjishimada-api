@@ -726,18 +726,6 @@ class MapService(BaseService):
                 )
 
         map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{type(map_data)}")
-        log.info(f"\n\n\n\n{map_data}")
-        log.info(f"\n\n\n\n")
-        log.info(f"\n\n\n\n")
-        log.info(f"\n\n\n\n")
-        log.info(f"\n\n\n\n")
         return CreateMapReturnDTO(job_status, map_data)
 
     @_handle_exceptions
@@ -867,8 +855,6 @@ class MapService(BaseService):
         """
         builder = MapSearchSQLBuilder(filters)
         query, args = builder.build()
-        print(query)
-        print(args)
         rows = await self._conn.fetch(query, *args)
         _models = msgspec.convert(rows, list[MapReadDTO])
         if not _models:
