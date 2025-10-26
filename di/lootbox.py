@@ -445,6 +445,7 @@ class LootboxService(BaseService):
         Args:
             user_id (int): Target user ID.
             data (XpGrant): XP grant payload.
+            headers: Headers.
 
         Returns:
             XpGrantResult: Previous and new XP amounts.
@@ -563,6 +564,7 @@ async def provide_lootbox_service(conn: Connection, state: State) -> LootboxServ
 
     Args:
         conn (Connection): Active asyncpg connection.
+        state: Application state.
 
     Returns:
         LootboxService: New service instance.

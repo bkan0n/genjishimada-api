@@ -104,7 +104,7 @@ class PlaytestService(BaseService):
         """Cast or update a vote, then publish MQ.
 
         Args:
-            state: App state (for MQ).
+            request (Request): Request obj.
             thread_id: Forum thread ID.
             user_id: Voter's user ID.
             data: Vote payload.
@@ -138,7 +138,7 @@ class PlaytestService(BaseService):
         """Remove a user's vote, then publish MQ.
 
         Args:
-            state: App state (for MQ).
+            request (Request): Request obj.
             thread_id: Forum thread ID.
             user_id: Voter's user ID.
 
@@ -226,7 +226,7 @@ class PlaytestService(BaseService):
         After the transaction commits, publishes a `PlaytestApprove` message to the queue.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             code (str): Map code being approved.
             thread_id (int): Associated playtest thread ID.
             difficulty (DifficultyAll): Finalized difficulty rating.
@@ -286,7 +286,7 @@ class PlaytestService(BaseService):
         After the transaction commits, publishes a `PlaytestForceAccept` message.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             code (str): Map code being force-accepted.
             thread_id (int): Associated playtest thread ID.
             difficulty (DifficultyAll): Finalized difficulty rating.
@@ -334,7 +334,7 @@ class PlaytestService(BaseService):
         After the transaction commits, publishes a `PlaytestForceDeny` message.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             thread_id (int): Associated playtest thread ID.
             verifier_id (int): ID of the verifier.
             reason (str): Explanation for denial.
@@ -380,7 +380,7 @@ class PlaytestService(BaseService):
         After cleanup, publishes a `PlaytestReset` message.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             thread_id (int): Associated playtest thread ID.
             verifier_id (int): ID of the verifier initiating the reset.
             reason (str): Explanation for the reset.

@@ -649,6 +649,7 @@ async def provide_community_service(conn: Connection, state: State) -> Community
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state (State): App state.
 
     Returns:
         CommunityService: A new service instance bound to the given connection.

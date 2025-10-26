@@ -1,7 +1,7 @@
 import typing
 import uuid
 from logging import getLogger
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import aio_pika
 import msgspec
@@ -23,6 +23,7 @@ class BaseService:
 
         Args:
             conn (Connection): asyncpg connection.
+            state (State): App state.
 
         """
         self._conn = conn

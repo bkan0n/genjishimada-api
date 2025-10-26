@@ -345,6 +345,7 @@ class CompletionsController(Controller):
         page_number: int = 1,
         page_size: Literal[10, 20, 25, 50] = 10,
     ) -> list[CompletionReadDTO]:
+        """Get the legacy completions for a map code."""
         return await svc.get_legacy_completions_per_map(code, page_number, page_size)
 
     @post(
@@ -358,4 +359,5 @@ class CompletionsController(Controller):
         code: OverwatchCode,
         data: QualityUpdateDTO,
     ) -> None:
+        """Set the quality vote for a map code for a user."""
         return await svc.set_quality_vote_for_map_code(code, data.user_id, data.quality)

@@ -431,6 +431,7 @@ async def provide_rank_card_service(conn: asyncpg.Connection, state: State) -> R
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state (State): Application state.
 
     Returns:
         RankCardService: A new service instance bound to the given connection.

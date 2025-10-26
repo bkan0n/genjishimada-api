@@ -395,6 +395,7 @@ class UtilitiesController(Controller):
         tags=["Utilities"],
     )
     async def log_map_clicks(self, conn: Connection, data: MapClickCreateDTO) -> None:
+        """Log the click on a 'copy code' button on the website."""
         secret = os.getenv("IP_HASH_SECRET", "").encode("utf-8")
         ip_hash = hmac.new(secret, data.ip_address.encode("utf-8"), hashlib.sha256).hexdigest()
         query = """

@@ -13,6 +13,7 @@ from .base import BaseService
 
 class InternalJobsService(BaseService):
     async def get_job(self, job_id: uuid.UUID) -> JobStatus:
+        """Get job status."""
         row = await self._conn.fetchrow(
             "SELECT id, status::text, error_code, error_msg FROM public.jobs WHERE id=$1",
             job_id,
@@ -22,6 +23,7 @@ class InternalJobsService(BaseService):
         return JobStatus(id=row["id"], status=row["status"], error_code=row["error_code"], error_msg=row["error_msg"])
 
     async def update_job(self, job_id: uuid.UUID, data: JobUpdate) -> None:
+        """Update job status."""
         now = datetime.now(timezone.utc)
         sets = {
             "processing": ("status='processing', started_at=COALESCE(started_at,$2)", (job_id, now)),

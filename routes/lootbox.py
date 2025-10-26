@@ -286,6 +286,7 @@ class LootboxController(Controller):
             svc (LootboxService): Lootbox service dependency.
             user_id (int): Target user ID.
             data (XpGrant): XP grant payload.
+            request (Request): Request obj.
 
         Returns:
             XpGrantResult: Previous and new XP totals.

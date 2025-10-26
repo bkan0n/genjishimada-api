@@ -15,12 +15,9 @@ from litestar import Controller, post
 class TagsController(Controller):
     path = "/tags"
 
-    # -----------------------------
-    # /search
-    # -----------------------------
     @post(path="/search")
-    async def search(self, conn: Connection, data: TagsSearchFilters) -> TagsSearchResponse:
-        # Whitelist sort mapping -> actual columns
+    async def search(self, conn: Connection, data: TagsSearchFilters) -> TagsSearchResponse:  # noqa: PLR0912
+        """Search tags."""
         sort_col_map = {
             "name": "tag_lookup.name",
             "uses": "tags.uses",
@@ -56,15 +53,11 @@ class TagsController(Controller):
             "WHERE tag_lookup.location_id = $1",
         ]
 
-        # include_aliases / only_aliases
-        # - only_aliases=True  => only alias rows (lookup.name != tags.name)
-        # - include_aliases=False => only canonical rows (lookup.name = tags.name)
         if data.only_aliases:
             sql.append("AND LOWER(tag_lookup.name) <> LOWER(tags.name)")
         elif not data.include_aliases:
             sql.append("AND LOWER(tag_lookup.name) = LOWER(tags.name)")
 
-        # by_id takes precedence over name/fuzzy
         if data.by_id is not None:
             sql.append(f"AND tags.id = ${idx}")
             params.append(data.by_id)
@@ -82,21 +75,17 @@ class TagsController(Controller):
             params.append(data.owner_id)
             idx += 1
 
-        # ordering
         if data.random:
             sql.append("ORDER BY random()")
         elif data.fuzzy and data.name:
-            # If fuzzy search was requested, prefer similarity sort
             sql.append(f"ORDER BY similarity(tag_lookup.name, ${idx - 1}) DESC")
         else:
             sql.append(f"ORDER BY {order_by_sql} {sort_dir}")
 
-        # pagination
         sql.append(f"LIMIT {int(data.limit)} OFFSET {int(data.offset)}")
 
         rows = await conn.fetch("\n".join(sql), *params)
 
-        # If nothing found and user did an exact name query (non-fuzzy), return suggestions
         if not rows and data.name and not data.fuzzy:
             suggest_q = """
                 SELECT tag_lookup.name
@@ -124,11 +113,9 @@ class TagsController(Controller):
 
         return TagsSearchResponse(items=items, total=len(items))
 
-    # -----------------------------
-    # /mutate
-    # -----------------------------
     @post(path="/mutate")
-    async def mutate(self, conn: Connection, data: TagsMutateRequest) -> TagsMutateResponse:
+    async def mutate(self, conn: Connection, data: TagsMutateRequest) -> TagsMutateResponse:  # noqa: PLR0912, PLR0915
+        """Mutate a tag."""
         results: list[TagsMutateResult] = []
 
         for op in data.ops:
@@ -144,7 +131,7 @@ class TagsController(Controller):
                         VALUES ($1,$3,$4,(SELECT id FROM ins))
                         RETURNING (SELECT id FROM ins);
                     """
-                    tag_id = await conn.fetchval(q, op.name, op.content, op.owner_id, op.guild_id)
+                    tag_id = await conn.fetchval(q, op.name, op.content, op.owner_id, op.guild_id)  # type: ignore
                     results.append(TagsMutateResult(ok=True, tag_id=tag_id, message="Tag created"))
                     continue
 
@@ -155,7 +142,7 @@ class TagsController(Controller):
                         FROM tag_lookup
                         WHERE tag_lookup.location_id=$3 AND LOWER(tag_lookup.name)=LOWER($2);
                     """
-                    res = await conn.execute(q, op.new_name, op.old_name, op.guild_id, op.owner_id)
+                    res = await conn.execute(q, op.new_name, op.old_name, op.guild_id, op.owner_id)  # type: ignore
                     results.append(TagsMutateResult(ok=True, affected=int(res.split()[-1]), message="Alias created"))
                     continue
 
@@ -165,7 +152,7 @@ class TagsController(Controller):
                         SET content=$1
                         WHERE LOWER(name)=LOWER($2) AND location_id=$3 AND owner_id=$4;
                     """
-                    res = await conn.execute(q, op.new_content, op.name, op.guild_id, op.owner_id)
+                    res = await conn.execute(q, op.new_content, op.name, op.guild_id, op.owner_id)  # type: ignore
                     results.append(TagsMutateResult(ok=True, affected=int(res.split()[-1]), message="Tag edited"))
                     continue
 
@@ -173,7 +160,7 @@ class TagsController(Controller):
                     async with conn.transaction():
                         del_lookup = await conn.fetchrow(
                             "DELETE FROM tag_lookup WHERE LOWER(name)=LOWER($1) AND location_id=$2 RETURNING tag_id;",
-                            op.name,
+                            op.name,  # type: ignore
                             op.guild_id,
                         )
                         if not del_lookup:
@@ -187,10 +174,14 @@ class TagsController(Controller):
                 if op.op == "remove_by_id":
                     async with conn.transaction():
                         await conn.execute(
-                            "DELETE FROM tag_lookup WHERE tag_id=$1 AND location_id=$2;", op.tag_id, op.guild_id
+                            "DELETE FROM tag_lookup WHERE tag_id=$1 AND location_id=$2;",
+                            op.tag_id,  # type: ignore
+                            op.guild_id,
                         )
                         res = await conn.execute(
-                            "DELETE FROM tags WHERE id=$1 AND location_id=$2;", op.tag_id, op.guild_id
+                            "DELETE FROM tags WHERE id=$1 AND location_id=$2;",
+                            op.tag_id,  # type: ignore
+                            op.guild_id,
                         )
                         results.append(TagsMutateResult(ok=True, affected=int(res.split()[-1]), message="Tag deleted"))
                     continue
@@ -198,7 +189,7 @@ class TagsController(Controller):
                 if op.op == "increment_usage":
                     await conn.execute(
                         "UPDATE tags SET uses = uses + 1 WHERE LOWER(name)=LOWER($1) AND location_id=$2;",
-                        op.name,
+                        op.name,  # pyright: ignore[reportAttributeAccessIssue]
                         op.guild_id,
                     )
                     results.append(TagsMutateResult(ok=True, message="Usage incremented"))
@@ -207,21 +198,25 @@ class TagsController(Controller):
                 if op.op == "transfer":
                     async with conn.transaction():
                         q1 = "SELECT id FROM tags WHERE LOWER(name)=LOWER($1) AND location_id=$2 AND owner_id=$3;"
-                        row = await conn.fetchrow(q1, op.name, op.guild_id, op.requester_id)
+                        row = await conn.fetchrow(q1, op.name, op.guild_id, op.requester_id)  # type: ignore
                         if not row:
                             results.append(TagsMutateResult(ok=False, message="No permission or tag not found"))
                             continue
                         tag_id = row["id"]
-                        await conn.execute("UPDATE tags SET owner_id=$1 WHERE id=$2;", op.new_owner_id, tag_id)
+                        await conn.execute("UPDATE tags SET owner_id=$1 WHERE id=$2;", op.new_owner_id, tag_id)  # type: ignore
                         await conn.execute(
-                            "UPDATE tag_lookup SET owner_id=$1 WHERE tag_id=$2;", op.new_owner_id, tag_id
+                            "UPDATE tag_lookup SET owner_id=$1 WHERE tag_id=$2;",
+                            op.new_owner_id,  # type: ignore
+                            tag_id,
                         )
                         results.append(TagsMutateResult(ok=True, message="Ownership transferred"))
                     continue
 
                 if op.op == "purge":
                     res = await conn.execute(
-                        "DELETE FROM tags WHERE location_id=$1 AND owner_id=$2;", op.guild_id, op.owner_id
+                        "DELETE FROM tags WHERE location_id=$1 AND owner_id=$2;",
+                        op.guild_id,
+                        op.owner_id,  # type: ignore
                     )
                     results.append(TagsMutateResult(ok=True, affected=int(res.split()[-1]), message="User purged"))
                     continue
@@ -231,15 +226,17 @@ class TagsController(Controller):
                         row = await conn.fetchrow(
                             "SELECT id FROM tags WHERE location_id=$1 AND LOWER(name)=LOWER($2);",
                             op.guild_id,
-                            op.name,
+                            op.name,  # type: ignore
                         )
                         if not row:
                             results.append(TagsMutateResult(ok=False, message="Tag not found"))
                             continue
                         tag_id = row["id"]
-                        await conn.execute("UPDATE tags SET owner_id=$1 WHERE id=$2;", op.requester_id, tag_id)
+                        await conn.execute("UPDATE tags SET owner_id=$1 WHERE id=$2;", op.requester_id, tag_id)  # type: ignore
                         await conn.execute(
-                            "UPDATE tag_lookup SET owner_id=$1 WHERE tag_id=$2;", op.requester_id, tag_id
+                            "UPDATE tag_lookup SET owner_id=$1 WHERE tag_id=$2;",
+                            op.requester_id,  # type: ignore
+                            tag_id,
                         )
                         results.append(TagsMutateResult(ok=True, message="Tag claimed"))
                     continue
@@ -250,11 +247,9 @@ class TagsController(Controller):
 
         return TagsMutateResponse(results=results)
 
-    # -----------------------------
-    # /autocomplete
-    # -----------------------------
     @post(path="/autocomplete")
     async def autocomplete(self, conn: Connection, data: TagsAutocompleteRequest) -> TagsAutocompleteResponse:
+        """Autocomplete route for tags."""
         if not data.q.strip():
             return TagsAutocompleteResponse(items=[])
         table = "tag_lookup" if "aliased" in data.mode else "tags"

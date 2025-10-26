@@ -73,7 +73,7 @@ class PlaytestController(litestar.Controller):
         """Cast a vote for a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             user_id: ID of the user casting the vote.
             data: The vote payload.
@@ -99,7 +99,7 @@ class PlaytestController(litestar.Controller):
         """Delete a user's vote for a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             user_id: ID of the user whose vote should be removed.
             playtest_svc: Service layer for playtest operations.
@@ -193,7 +193,7 @@ class PlaytestController(litestar.Controller):
         """Approve a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Approval payload containing code, difficulty, and verifier details.
             playtest_svc: Service layer for playtest operations.
@@ -217,7 +217,7 @@ class PlaytestController(litestar.Controller):
         """Force accept a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Force-accept payload containing code, difficulty, and verifier details.
             playtest_svc: Service layer for playtest operations.
@@ -242,7 +242,7 @@ class PlaytestController(litestar.Controller):
         """Force deny a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Force-deny payload containing code, reason, and verifier details.
             playtest_svc: Service layer for playtest operations.
@@ -267,7 +267,7 @@ class PlaytestController(litestar.Controller):
         """Reset a playtest to its initial state.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Reset payload containing removal options and reset reason.
             playtest_svc: Service layer for playtest operations.

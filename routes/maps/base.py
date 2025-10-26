@@ -395,6 +395,7 @@ class BaseMapsController(litestar.Controller):
             data (MapCreateDTO): New map payload.
             newsfeed (NewsfeedService): Service handling newsfeed.
             users (UserService): Service handling user data.
+            request (Request): Request obj.
 
         Returns:
             MapReadDTO: Created map.
@@ -421,7 +422,7 @@ class BaseMapsController(litestar.Controller):
 
         return _data
 
-    async def _generate_patch_newsfeed(
+    async def _generate_patch_newsfeed(  # noqa: PLR0913
         self,
         newsfeed: "NewsfeedService",
         old_data: "MapReadDTO",
@@ -453,6 +454,7 @@ class BaseMapsController(litestar.Controller):
             event_type: Event type label or enum value (defaults to ``"map_edit"``).
             get_creator_name: Optional resolver for creator names by ID when the
                 patch omits names.
+            request (Request): Request obj.
 
         Returns:
             None. Publishes an event only if there are material changes; otherwise no-op.
@@ -503,7 +505,7 @@ class BaseMapsController(litestar.Controller):
         summary="Update Map",
         description=("Patch an existing map by code using a partial update payload. Returns the updated map."),
     )
-    async def update_map(
+    async def update_map(  # noqa: PLR0913
         self,
         code: OverwatchCode,
         data: MapPatchDTO,
@@ -520,6 +522,7 @@ class BaseMapsController(litestar.Controller):
             svc (MapService): Injected map service.
             newsfeed (NewsfeedService): Service handling newsfeed.
             users (UserService): Service handling user data.
+            request (Request): Request obj.
 
         Returns:
             MapReadDTO: Updated map.
@@ -659,7 +662,7 @@ class BaseMapsController(litestar.Controller):
         summary="Create Guide",
         description="Create a new guide for the specified map.",
     )
-    async def create_guide(
+    async def create_guide(  # noqa: PLR0913
         self,
         svc: MapService,
         code: OverwatchCode,
@@ -676,6 +679,7 @@ class BaseMapsController(litestar.Controller):
             users (UserService): Service handling user data.
             code (OverwatchCode): Map code.
             data (Guide): Guide payload.
+            request (Request): Request obj.
 
         Returns:
             Guide: Created guide.
@@ -770,6 +774,7 @@ class BaseMapsController(litestar.Controller):
             svc (MapService): Injected map service.
             newsfeed (NewsfeedService): Service handling newsfeed.
             code (OverwatchCode): Map code to convert.
+            request (Request): Request obj.
 
         """
         affected_count = await svc.convert_map_to_legacy(code)
@@ -800,11 +805,9 @@ class BaseMapsController(litestar.Controller):
         """Archive or unarchive one or more maps.
 
         Args:
-            state (State): Application state used to publish the archive event.
+            request (Request): Request obj.
             svc (MapService): Service handling archive and unarchive operations.
             newsfeed (NewsfeedService): Service handling newsfeed.
-            code (OverwatchCode): Map code parameter accepted for route compatibility.
-                Not used directly by this handler.
             data (ArchivalStatusPatchDTO): Patch payload containing the desired status
                 and the list of map ``codes`` to act upon.
 

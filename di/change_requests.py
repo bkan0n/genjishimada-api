@@ -143,6 +143,7 @@ async def provide_change_requests_service(conn: Connection, state: State) -> Cha
 
     Args:
         conn (Connection): Active asyncpg connection.
+        state (State): App state.
 
     Returns:
         ChangeRequestsService: A new service instance bound to `conn`.

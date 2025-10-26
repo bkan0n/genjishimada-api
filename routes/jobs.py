@@ -14,8 +14,10 @@ class InternalJobsController(Controller):
 
     @get("/{job_id:str}")
     async def get_job(self, svc: InternalJobsService, job_id: uuid.UUID) -> JobStatus:
+        """Get job status."""
         return await svc.get_job(job_id)
 
     @patch("/{job_id:str}", include_in_schema=False)
     async def update_job(self, svc: InternalJobsService, job_id: uuid.UUID, data: JobUpdate) -> None:
+        """Update pending job."""
         return await svc.update_job(job_id, data)

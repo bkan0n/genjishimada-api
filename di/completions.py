@@ -25,7 +25,6 @@ from genjipk_sdk.utilities.types import OverwatchCode
 from litestar import Request
 from litestar.datastructures import State
 from litestar.status_codes import HTTP_400_BAD_REQUEST
-from msgspec.inspect import UUIDType
 
 from di.base import BaseService
 from utilities.errors import CustomHTTPException
@@ -199,7 +198,7 @@ class CompletionsService(BaseService):
         """Submit a new completion record and publish an event.
 
         Args:
-            state (State): Application state, used to publish events.
+            request (Request): Request obj.
             data (CompletionCreateDTO): DTO containing completion details.
 
         Returns:
@@ -857,6 +856,8 @@ class CompletionsService(BaseService):
 
         Args:
             code: Overwatch map code to fetch legacy completions for.
+            page_number (int): Page nubmer for pagination.
+            page_size (int): Page size for pagination.
 
         Returns:
             list[CompletionReadDTO]: Legacy completion rows (latest per user) for the
@@ -1049,7 +1050,7 @@ class CompletionsService(BaseService):
 
         Args:
             data (UpvoteCreateDTO): Upvote details including user and message ID.
-            state (State): Litestar state.
+            request: Request.
 
         Returns:
             int: The total upvote count after insertion.
@@ -1209,6 +1210,7 @@ class CompletionsService(BaseService):
         return msgspec.convert(rows, list[CompletionReadDTO])
 
     async def set_quality_vote_for_map_code(self, code: OverwatchCode, user_id: int, quality: int) -> None:
+        """Set the quality vote for a map code per user."""
         query = """
         WITH target_map AS (
             SELECT id AS map_id FROM core.maps WHERE code = $1
@@ -1228,6 +1230,7 @@ async def provide_completions_service(conn: Connection, state: State) -> Complet
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state: App state.
 
     Returns:
         CompletionsService: A new service instance bound to the given connection.
