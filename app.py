@@ -120,7 +120,7 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
         path="/docs",
         servers=[
             Server(
-                url="https://api.youngnebula.com"
+                url="https://dev-api.genji.pk"
                 if os.getenv("API_ENVIRONMENT") == "development"
                 else "https://api.genji.pk",
                 description="Default server",
