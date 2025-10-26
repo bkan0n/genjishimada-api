@@ -945,5 +945,62 @@ CREATE TABLE public.jobs (
 
 CREATE INDEX ON public.jobs (status, created_at);
 
+create table public.tags
+(
+    id          serial
+        primary key,
+    name        text,
+    content     text,
+    owner_id    bigint,
+    uses        integer   default 0,
+    location_id bigint,
+    created_at  timestamp default (now() AT TIME ZONE 'utc'::text)
+);
+
+create table public.tag_lookup
+(
+    id          serial
+        primary key,
+    name        text,
+    location_id bigint,
+    owner_id    bigint,
+    created_at  timestamp default (now() AT TIME ZONE 'utc'::text),
+    tag_id      integer
+        references public.tags
+            on delete cascade
+);
+
+
+create index tag_lookup_location_id_idx
+    on public.tag_lookup (location_id);
+
+create index tag_lookup_name_idx
+    on public.tag_lookup (name);
+
+create index tag_lookup_name_lower_idx
+    on public.tag_lookup (lower(name));
+
+create index tag_lookup_name_trgm_idx
+    on public.tag_lookup using gin (name public.gin_trgm_ops);
+
+create unique index tag_lookup_uniq_idx
+    on public.tag_lookup (lower(name), location_id);
+
+
+create index tags_location_id_idx
+    on public.tags (location_id);
+
+create index tags_name_idx
+    on public.tags (name);
+
+create index tags_name_lower_idx
+    on public.tags (lower(name));
+
+create index tags_name_trgm_idx
+    on public.tags using gin (name public.gin_trgm_ops);
+
+create unique index tags_uniq_idx
+    on public.tags (lower(name), location_id);
+
 
 COMMIT;
