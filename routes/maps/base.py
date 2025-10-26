@@ -870,7 +870,6 @@ class BaseMapsController(litestar.Controller):
             code (OverwatchCode): The map code to overwrite.
             data (QualityVoteDTO): Data for overwriting.
         """
-        # TODO: Newsfeed here, special cased
         return await svc.override_map_quality_votes(code, data)
 
     @litestar.post(

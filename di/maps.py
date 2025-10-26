@@ -1354,7 +1354,6 @@ class MapService(BaseService):
         RETURNING user_id, url;
         """
         res = await self._conn.fetchrow(query, code, data.user_id, data.url)
-        # TODO Guide MQ
         return msgspec.convert(res, Guide)
 
     async def get_affected_users(self, code: OverwatchCode) -> list[int]:
