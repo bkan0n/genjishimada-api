@@ -279,7 +279,7 @@ class LootboxController(Controller):
         summary="Grant XP to User",
         description="Add XP to a user and return their previous and new totals.",
     )
-    async def grant_user_xp(self, svc: LootboxService, user_id: int, data: XpGrant) -> XpGrantResult:
+    async def grant_user_xp(self, request: Request, svc: LootboxService, user_id: int, data: XpGrant) -> XpGrantResult:
         """Grant XP to a user.
 
         Args:
@@ -291,7 +291,7 @@ class LootboxController(Controller):
             XpGrantResult: Previous and new XP totals.
 
         """
-        return await svc.grant_user_xp(user_id, data)
+        return await svc.grant_user_xp(request.headers, user_id, data)
 
     @get(
         path="/xp/tier",

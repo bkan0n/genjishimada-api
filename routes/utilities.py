@@ -377,7 +377,6 @@ class UtilitiesController(Controller):
         res = await conn.fetch(query, search, limit, fake_users_only)
         if not res:
             return None
-        # TODO: Better return type?
         return [(r["user_id"], r["name"]) for r in res]
 
     @post(path="/log", include_in_schema=False)

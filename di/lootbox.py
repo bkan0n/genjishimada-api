@@ -12,8 +12,10 @@ from genjipk_sdk.models import (
     XpGrant,
     XpGrantResult,
 )
+from genjipk_sdk.models.xp import XpGrantMQ
 from litestar import Request
 from litestar.datastructures import State
+from litestar.datastructures.headers import Headers
 from litestar.exceptions import HTTPException
 
 from .base import BaseService
@@ -312,7 +314,6 @@ class LootboxService(BaseService):
         if key_count <= 0 and not request.headers.get("x-test-mode"):
             raise HTTPException(detail="User does not have enough keys for this action.", status_code=400)
 
-        # TODO: Remove this check once website is set up for this
         query = """
             SELECT rt.rarity
             FROM lootbox.user_rewards ur
@@ -436,7 +437,7 @@ class LootboxService(BaseService):
             return 0
         return amount
 
-    async def grant_user_xp(self, user_id: int, data: XpGrant) -> XpGrantResult:
+    async def grant_user_xp(self, headers: Headers, user_id: int, data: XpGrant) -> XpGrantResult:
         """Grant XP to a user.
 
         Performs an upsert into the XP table, summing new and existing values.
@@ -470,7 +471,16 @@ class LootboxService(BaseService):
           (SELECT amount FROM upsert_result)           AS new_amount;
         """
         row = await self._conn.fetchrow(query, user_id, data.amount)
-        return msgspec.convert(row, XpGrantResult)
+        result = msgspec.convert(row, XpGrantResult)
+        message = XpGrantMQ(
+            user_id=user_id,
+            amount=data.amount,
+            type=data.type,
+            previous_amount=result.previous_amount,
+            new_amount=result.new_amount,
+        )
+        await self.publish_message(routing_key="api.xp.grant", data=message, headers=headers)
+        return result
 
     async def get_xp_tier_change(self, old_xp: int, new_xp: int) -> TierChange:
         """Calculate tier change when XP is updated.

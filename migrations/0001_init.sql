@@ -802,7 +802,8 @@ CREATE TABLE IF NOT EXISTS lootbox.xp
 (
     user_id bigint  NOT NULL PRIMARY KEY
         CONSTRAINT xp_users_user_id_fk REFERENCES core.users (id) ON UPDATE CASCADE,
-    amount  integer NOT NULL
+    amount  integer NOT NULL,
+    type    text DEFAULT 'Other'
 );
 
 
