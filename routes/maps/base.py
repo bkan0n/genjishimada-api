@@ -223,6 +223,7 @@ async def _friendly_value(
     b = _to_builtin(value)
     if b is None:
         return _friendly_none(None)
+
     return str(b)
 
 
