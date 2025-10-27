@@ -12,7 +12,7 @@ from genjipk_sdk.models import (
     TimePlayedPerRankResponse,
     TopCreatorsResponse,
 )
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Controller, get
 from litestar.params import Parameter
 

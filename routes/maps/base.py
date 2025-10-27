@@ -33,7 +33,7 @@ from genjipk_sdk.models import (
 )
 from genjipk_sdk.models.jobs import CreateMapReturnDTO
 from genjipk_sdk.utilities import DifficultyTop
-from genjipk_sdk.utilities.types import (
+from genjipk_sdk.utilities._types import (
     GuideURL,
     MapCategory,
     Mechanics,

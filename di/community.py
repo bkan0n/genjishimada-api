@@ -14,7 +14,7 @@ from genjipk_sdk.models import (
     TimePlayedPerRankResponse,
     TopCreatorsResponse,
 )
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar.datastructures import State
 
 from .base import BaseService

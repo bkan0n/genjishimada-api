@@ -7,7 +7,7 @@ from typing import Annotated, cast
 from asyncpg import Connection
 from genjipk_sdk.models import LogCreateDTO
 from genjipk_sdk.models.logging import MapClickCreateDTO
-from genjipk_sdk.utilities.types import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
+from genjipk_sdk.utilities._types import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
 from litestar import Controller, MediaType, get, post
 from litestar.datastructures import UploadFile
 from litestar.di import Provide

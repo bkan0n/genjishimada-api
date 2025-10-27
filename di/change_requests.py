@@ -3,7 +3,7 @@ from __future__ import annotations
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import ChangeRequestCreateDTO, ChangeRequestReadDTO, StaleChangeRequestReadDTO
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar.datastructures import State
 from litestar.di import Provide
 

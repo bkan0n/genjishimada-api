@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 import litestar
 from genjipk_sdk.models.jobs import CreatePublishNewsfeedReturnDTO
 from genjipk_sdk.models.newsfeed import NewsfeedEvent
-from genjipk_sdk.utilities.types import NewsfeedEventType
+from genjipk_sdk.utilities._types import NewsfeedEventType
 from litestar import Controller, Request
 from litestar.di import Provide
 from litestar.params import Parameter

@@ -1,7 +1,7 @@
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import MapMasteryData, RankDetailReadDTO
-from genjipk_sdk.utilities.types import OverwatchMap
+from genjipk_sdk.utilities._types import OverwatchMap
 
 
 async def get_map_mastery_data(

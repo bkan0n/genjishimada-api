@@ -33,7 +33,7 @@ from genjipk_sdk.utilities import (
     DifficultyTop,
     convert_raw_difficulty_to_difficulty_all,
 )
-from genjipk_sdk.utilities.types import (
+from genjipk_sdk.utilities._types import (
     GuideURL,
     MapCategory,
     Mechanics,
