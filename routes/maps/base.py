@@ -767,6 +767,7 @@ class BaseMapsController(litestar.Controller):
         code: OverwatchCode,
         newsfeed: NewsfeedService,
         request: litestar.Request,
+        reason: str = "",
     ) -> None:
         """Convert completions for a map to legacy and remove medals.
 
@@ -775,10 +776,11 @@ class BaseMapsController(litestar.Controller):
             newsfeed (NewsfeedService): Service handling newsfeed.
             code (OverwatchCode): Map code to convert.
             request (Request): Request obj.
+            reason (str): Add a reason to why the map was converted.
 
         """
         affected_count = await svc.convert_map_to_legacy(code)
-        event_payload = NewsfeedLegacyRecord(code=code, affected_count=affected_count, reason="")
+        event_payload = NewsfeedLegacyRecord(code=code, affected_count=affected_count, reason=reason)
         event = NewsfeedEvent(
             id=None, timestamp=dt.datetime.now(dt.timezone.utc), payload=event_payload, event_type="legacy_record"
         )
