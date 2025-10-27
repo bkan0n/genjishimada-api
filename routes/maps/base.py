@@ -215,9 +215,9 @@ async def _friendly_value(
 
     if field == "medals":
         return (
-            f"<a:_:1406302950443192320>: {value['gold']} "
-            f"<a:_:1406302952263782466>: {value['silver']} "
-            f"<a:_:1406300035624341604>: {value['bronze']} "
+            f"<a:_:1406302950443192320>: {value.gold} "
+            f"<a:_:1406302952263782466>: {value.silver} "
+            f"<a:_:1406300035624341604>: {value.bronze} "
         )
 
     b = _to_builtin(value)
