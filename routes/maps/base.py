@@ -215,7 +215,7 @@ async def _friendly_value(
 
     if field == "medals":
         return (
-            f"<a:_:1406302950443192320>: {value.gold}\n"
+            f"\n<a:_:1406302950443192320>: {value.gold}\n"
             f"<a:_:1406302952263782466>: {value.silver}\n"
             f"<a:_:1406300035624341604>: {value.bronze}\n"
         )
