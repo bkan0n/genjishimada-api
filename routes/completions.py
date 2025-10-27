@@ -315,7 +315,7 @@ class CompletionsController(Controller):
         """
         return await svc.get_all_completions(page_size, page_number)
 
-    @get(path="/wr-xp-check", include_in_schema=False)
+    @get(path="/{code:str}/wr-xp-check", include_in_schema=False)
     async def check_for_previous_world_record_xp(
         self,
         svc: CompletionsService,
