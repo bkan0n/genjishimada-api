@@ -143,6 +143,10 @@ class PlaytestService(BaseService):
             user_id: Voter's user ID.
 
         """
+        vote_check_q = "SELECT EXISTS(SELECT 1 FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2);"
+        if not self._conn.fetchval(vote_check_q, thread_id, user_id):
+            raise CustomHTTPException("There is no vote asssociated with this playtest thread and user id.")
+
         q = "DELETE FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2"
         await self._conn.execute(q, thread_id, user_id)
 
