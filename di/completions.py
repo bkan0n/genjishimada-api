@@ -1,6 +1,7 @@
 from logging import getLogger
 from typing import Any
 
+import asyncpg
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import (
@@ -232,16 +233,19 @@ class CompletionsService(BaseService):
             data.code,
         )
         completion = in_playtest or not data.video or not is_official
+        try:
+            res = await self._conn.fetchval(
+                query,
+                data.code,
+                data.user_id,
+                data.time,
+                data.screenshot,
+                data.video,
+                completion,
+            )
+        except asyncpg.exceptions.CheckViolationError as e:
+            raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail or "")
 
-        res = await self._conn.fetchval(
-            query,
-            data.code,
-            data.user_id,
-            data.time,
-            data.screenshot,
-            data.video,
-            completion,
-        )
         job_status = await self.publish_message(
             routing_key="api.completion.submission",
             data=MessageQueueCompletionsCreate(res),
