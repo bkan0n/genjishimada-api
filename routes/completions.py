@@ -291,7 +291,7 @@ class CompletionsController(Controller):
         """
         return await svc.upvote_submission(request, data)
 
-    @post(
+    @get(
         path="/all",
         summary="Get All Completions",
         description="Get all completions that are verified sorted by most recent.",
