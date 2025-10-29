@@ -1106,6 +1106,7 @@ class CompletionsService(BaseService):
             FROM core.completions c
             WHERE c.verified
               AND c.legacy = FALSE
+              AND c.message_id IS NOT NULL
             ORDER BY c.user_id,
                 c.map_id,
                 c.inserted_at DESC
