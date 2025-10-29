@@ -144,7 +144,7 @@ class PlaytestService(BaseService):
 
         """
         vote_check_q = "SELECT EXISTS(SELECT 1 FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2);"
-        if not self._conn.fetchval(vote_check_q, thread_id, user_id):
+        if not await self._conn.fetchval(vote_check_q, thread_id, user_id):
             raise CustomHTTPException(
                 "There is no vote asssociated with this playtest thread and user id.", status_code=HTTP_400_BAD_REQUEST
             )
