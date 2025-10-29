@@ -1106,7 +1106,6 @@ class CompletionsService(BaseService):
             FROM core.completions c
             WHERE c.verified
               AND c.legacy = FALSE
-              AND c.message_id IS NOT NULL
             ORDER BY c.user_id,
                 c.map_id,
                 c.inserted_at DESC
@@ -1207,6 +1206,7 @@ class CompletionsService(BaseService):
         WHERE TRUE
           AND c.verified
           AND c.legacy = FALSE
+          AND c.message_id IS NOT NULL
         ORDER BY c.inserted_at DESC
         LIMIT $1 OFFSET $2;
         """
