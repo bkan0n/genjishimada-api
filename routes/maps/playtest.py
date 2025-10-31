@@ -1,5 +1,5 @@
 import litestar
-from genjipk_sdk.models import PlaytestAssociateIDThread, PlaytestPatchDTO, PlaytestVote, PlaytestVotesAll
+from genjipk_sdk.models import JobStatus, PlaytestAssociateIDThread, PlaytestPatchDTO, PlaytestVote, PlaytestVotesAll
 from genjipk_sdk.models.maps import (
     PlaytestApproveCreate,
     PlaytestForceAcceptCreate,
@@ -10,6 +10,7 @@ from genjipk_sdk.models.maps import (
 from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.response import Stream
+from litestar.status_codes import HTTP_202_ACCEPTED
 
 from di import MapService, PlaytestService, provide_map_service, provide_playtest_service
 
@@ -64,21 +65,22 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/vote/{user_id:int}",
         summary="Cast Playtest Vote",
         description="Submit a vote for a specific playtest thread on behalf of a user.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def cast_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, data: PlaytestVote, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Cast a vote for a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             user_id: ID of the user casting the vote.
             data: The vote payload.
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.cast_vote(
+        return await playtest_svc.cast_vote(
             request=request,
             thread_id=thread_id,
             user_id=user_id,
@@ -89,20 +91,21 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/vote/{user_id:int}",
         summary="Delete Playtest Vote",
         description="Remove an individual user's vote for a specific playtest thread.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def delete_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Delete a user's vote for a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             user_id: ID of the user whose vote should be removed.
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.delete_vote(request=request, thread_id=thread_id, user_id=user_id)
+        return await playtest_svc.delete_vote(request=request, thread_id=thread_id, user_id=user_id)
 
     @litestar.delete(
         "/{thread_id:int}/vote",
@@ -182,20 +185,21 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/approve",
         summary="Approve Playtest",
         description="Approve a playtest, marking it as verified and setting its difficulty rating.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def approve_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestApproveCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Approve a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Approval payload containing code, difficulty, and verifier details.
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.approve(
+        return await playtest_svc.approve(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,
@@ -205,20 +209,21 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/force_accept",
         summary="Force Accept Playtest",
         description="Forcefully accept a playtest regardless of votes, assigning difficulty and verifier.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def force_accept_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestForceAcceptCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Force accept a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Force-accept payload containing code, difficulty, and verifier details.
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.force_accept(
+        return await playtest_svc.force_accept(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,
@@ -229,20 +234,21 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/force_deny",
         summary="Force Deny Playtest",
         description="Forcefully deny a playtest regardless of votes, recording the reason for rejection.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def force_deny_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestForceDenyCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Force deny a playtest.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Force-deny payload containing code, reason, and verifier details.
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.force_deny(
+        return await playtest_svc.force_deny(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,
@@ -253,20 +259,21 @@ class PlaytestController(litestar.Controller):
         "/{thread_id:int}/reset",
         summary="Reset Playtest",
         description="Reset a playtest to its initial state, optionally removing votes and completions.",
+        status_code=HTTP_202_ACCEPTED,
     )
     async def reset_playtest(
         self, request: litestar.Request, thread_id: int, data: PlaytestResetCreate, playtest_svc: PlaytestService
-    ) -> None:
+    ) -> JobStatus:
         """Reset a playtest to its initial state.
 
         Args:
-            state: Application state container.
+            request: Request obj.
             thread_id: ID of the playtest thread.
             data: Reset payload containing removal options and reset reason.
             playtest_svc: Service layer for playtest operations.
 
         """
-        await playtest_svc.reset(
+        return await playtest_svc.reset(
             request=request,
             thread_id=thread_id,
             verifier_id=data.verifier_id,

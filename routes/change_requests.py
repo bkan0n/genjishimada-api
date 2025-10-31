@@ -1,5 +1,5 @@
 from genjipk_sdk.models import ChangeRequestCreateDTO, ChangeRequestReadDTO, StaleChangeRequestReadDTO
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Controller, get, patch, post
 from litestar.di import Provide
 

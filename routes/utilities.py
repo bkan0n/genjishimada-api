@@ -1,13 +1,15 @@
 import hashlib
 import hmac
 import os
+from datetime import datetime
 from logging import getLogger
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
+import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import LogCreateDTO
 from genjipk_sdk.models.logging import MapClickCreateDTO
-from genjipk_sdk.utilities.types import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
+from genjipk_sdk.utilities._types import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
 from litestar import Controller, MediaType, get, post
 from litestar.datastructures import UploadFile
 from litestar.di import Provide
@@ -377,7 +379,6 @@ class UtilitiesController(Controller):
         res = await conn.fetch(query, search, limit, fake_users_only)
         if not res:
             return None
-        # TODO: Better return type?
         return [(r["user_id"], r["name"]) for r in res]
 
     @post(path="/log", include_in_schema=False)
@@ -396,6 +397,7 @@ class UtilitiesController(Controller):
         tags=["Utilities"],
     )
     async def log_map_clicks(self, conn: Connection, data: MapClickCreateDTO) -> None:
+        """Log the click on a 'copy code' button on the website."""
         secret = os.getenv("IP_HASH_SECRET", "").encode("utf-8")
         ip_hash = hmac.new(secret, data.ip_address.encode("utf-8"), hashlib.sha256).hexdigest()
         query = """
@@ -407,3 +409,28 @@ class UtilitiesController(Controller):
             ON CONFLICT ON CONSTRAINT u_click_unique_per_day DO NOTHING;
         """
         await conn.execute(query, data.code, data.user_id, data.source, ip_hash)
+
+    @get(
+        path="/log-map-click",
+        tags=["Utilities"],
+    )
+    async def get_log_map_clicks(
+        self,
+        conn: Connection,
+    ) -> Any:
+        query = """
+            SELECT id, map_id, user_id, source, user_agent, ip_hash, inserted_at, day_bucket
+            FROM maps.clicks ORDER BY inserted_at DESC LIMIT 100;
+        """
+        return msgspec.convert(await conn.fetch(query), list[LogClicksDebug] | None)
+
+
+class LogClicksDebug(msgspec.Struct):
+    id: int | None
+    map_id: int | None
+    user_id: int | None
+    source: str | None
+    user_agent: str | None
+    ip_hash: str | None
+    inserted_at: datetime
+    day_bucket: int

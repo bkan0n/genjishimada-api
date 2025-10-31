@@ -255,7 +255,6 @@ class UsersController(litestar.Controller):
             Response: Success with new bitmask or error with HTTP 400.
 
         """
-        # TODO: Response not good enough needs to be an explicit return value.
         if request.headers.get("x-test-mode"):
             return Response({"status": "success"}, status_code=HTTP_200_OK)
 
@@ -291,7 +290,6 @@ class UsersController(litestar.Controller):
             Response: Success with new bitmask or error payload with HTTP 400.
 
         """
-        # TODO: Response not good enough needs to be an explicit return value.
         ok, bitmask, error = await svc.apply_single_notification(user_id, notification_type, data)
         if ok:
             return Response({"status": "success", "bitmask": bitmask}, status_code=HTTP_200_OK)

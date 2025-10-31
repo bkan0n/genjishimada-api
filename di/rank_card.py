@@ -9,8 +9,8 @@ from genjipk_sdk.models import (
 )
 from genjipk_sdk.models.rank_card import RankCardBadgeSettings
 from genjipk_sdk.utilities import DIFFICULTY_TO_RANK_MAP
+from genjipk_sdk.utilities._types import Rank
 from genjipk_sdk.utilities.lootbox import sanitize_string
-from genjipk_sdk.utilities.types import Rank
 from litestar.datastructures import State
 
 from utilities.shared_queries import get_map_mastery_data, get_user_rank_data
@@ -431,6 +431,7 @@ async def provide_rank_card_service(conn: asyncpg.Connection, state: State) -> R
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state (State): Application state.
 
     Returns:
         RankCardService: A new service instance bound to the given connection.

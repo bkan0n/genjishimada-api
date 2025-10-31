@@ -4,8 +4,9 @@ from logging import getLogger
 from typing import Annotated, Literal
 
 import litestar
+from genjipk_sdk.models.jobs import CreatePublishNewsfeedReturnDTO
 from genjipk_sdk.models.newsfeed import NewsfeedEvent
-from genjipk_sdk.utilities.types import NewsfeedEventType
+from genjipk_sdk.utilities._types import NewsfeedEventType
 from litestar import Controller, Request
 from litestar.di import Provide
 from litestar.params import Parameter
@@ -28,7 +29,12 @@ class NewsfeedController(Controller):
             "The request body must be a valid NewsfeedEvent; the response is the numeric ID of the newly created row."
         ),
     )
-    async def create_newsfeed_event(self, request: Request, svc: NewsfeedService, data: NewsfeedEvent) -> int:
+    async def create_newsfeed_event(
+        self,
+        request: Request,
+        svc: NewsfeedService,
+        data: NewsfeedEvent,
+    ) -> CreatePublishNewsfeedReturnDTO:
         """Create a newsfeed event and publish its ID.
 
         Args:
@@ -40,8 +46,7 @@ class NewsfeedController(Controller):
             int: The newly created newsfeed event ID.
 
         """
-        new_id = await svc.create_and_publish(data, headers=request.headers)
-        return new_id
+        return await svc.create_and_publish(data, headers=request.headers)
 
     @litestar.get(
         "/",

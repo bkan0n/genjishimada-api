@@ -1,6 +1,7 @@
 from logging import getLogger
 from typing import Any
 
+import asyncpg
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import (
@@ -19,8 +20,9 @@ from genjipk_sdk.models.completions import (
     SuspiciousCompletionWriteDTO,
     UpvoteCreateDTO,
 )
+from genjipk_sdk.models.jobs import JobStatus, SubmitCompletionReturnDTO, UpvoteSubmissionReturnDTO
 from genjipk_sdk.utilities import DifficultyAll
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Request
 from litestar.datastructures import State
 from litestar.status_codes import HTTP_400_BAD_REQUEST
@@ -193,11 +195,11 @@ class CompletionsService(BaseService):
         models = msgspec.convert(rows, list[CompletionReadDTO])
         return models
 
-    async def submit_completion(self, request: Request, data: CompletionCreateDTO) -> int:
+    async def submit_completion(self, request: Request, data: CompletionCreateDTO) -> SubmitCompletionReturnDTO:
         """Submit a new completion record and publish an event.
 
         Args:
-            state (State): Application state, used to publish events.
+            request (Request): Request obj.
             data (CompletionCreateDTO): DTO containing completion details.
 
         Returns:
@@ -231,23 +233,26 @@ class CompletionsService(BaseService):
             data.code,
         )
         completion = in_playtest or not data.video or not is_official
+        try:
+            res = await self._conn.fetchval(
+                query,
+                data.code,
+                data.user_id,
+                data.time,
+                data.screenshot,
+                data.video,
+                completion,
+            )
+        except asyncpg.exceptions.CheckViolationError as e:
+            raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail or "")
 
-        res = await self._conn.fetchval(
-            query,
-            data.code,
-            data.user_id,
-            data.time,
-            data.screenshot,
-            data.video,
-            completion,
-        )
-        await self.publish_message(
+        job_status = await self.publish_message(
             routing_key="api.completion.submission",
             data=MessageQueueCompletionsCreate(res),
             headers=request.headers,
         )
 
-        return res
+        return SubmitCompletionReturnDTO(job_status, res)
 
     def build_completion_patch_query(self, patch: CompletionPatchDTO) -> tuple[str, list[Any]]:
         """Build a dynamic SQL UPDATE query for patching a completion.
@@ -493,7 +498,12 @@ class CompletionsService(BaseService):
         rows = await self._conn.fetch(query)
         return msgspec.convert(rows, list[PendingVerification])
 
-    async def verify_completion(self, request: Request, record_id: int, data: CompletionVerificationPutDTO) -> None:
+    async def verify_completion(
+        self,
+        request: Request,
+        record_id: int,
+        data: CompletionVerificationPutDTO,
+    ) -> JobStatus:
         """Update verification status for a completion and publish an event.
 
         Args:
@@ -510,11 +520,12 @@ class CompletionsService(BaseService):
             verified_by=data.verified_by,
             reason=data.reason,
         )
-        await self.publish_message(
+        job_status = await self.publish_message(
             routing_key="api.completion.verification",
             data=message_data,
             headers=request.headers,
         )
+        return job_status
 
     async def get_completions_leaderboard(self, code: str, page_number: int, page_size: int) -> list[CompletionReadDTO]:
         """Retrieve the leaderboard for a map.
@@ -849,6 +860,8 @@ class CompletionsService(BaseService):
 
         Args:
             code: Overwatch map code to fetch legacy completions for.
+            page_number (int): Page nubmer for pagination.
+            page_size (int): Page size for pagination.
 
         Returns:
             list[CompletionReadDTO]: Legacy completion rows (latest per user) for the
@@ -1036,12 +1049,12 @@ class CompletionsService(BaseService):
             data.flagged_by,
         )
 
-    async def upvote_submission(self, request: Request, data: UpvoteCreateDTO) -> int:
+    async def upvote_submission(self, request: Request, data: UpvoteCreateDTO) -> UpvoteSubmissionReturnDTO:
         """Upvote a completion submission.
 
         Args:
             data (UpvoteCreateDTO): Upvote details including user and message ID.
-            state (State): Litestar state.
+            request: Request.
 
         Returns:
             int: The total upvote count after insertion.
@@ -1063,13 +1076,16 @@ class CompletionsService(BaseService):
             raise CustomHTTPException(
                 detail="User has already upvoted this completion.", status_code=HTTP_400_BAD_REQUEST
             )
+        job_status = None
         if count != 0 and count % upvote_channel_amount_breakpoint == 0:
             messsage_data = UpvoteUpdateDTO(
                 data.user_id,
                 data.message_id,
             )
-            await self.publish_message(routing_key="api.completion.upvote", data=messsage_data, headers=request.headers)
-        return count
+            job_status = await self.publish_message(
+                routing_key="api.completion.upvote", data=messsage_data, headers=request.headers
+            )
+        return UpvoteSubmissionReturnDTO(job_status, count)
 
     async def get_all_completions(self, page_size: int, page_number: int) -> list[CompletionReadDTO]:
         """Get all completions from most recent.
@@ -1190,6 +1206,7 @@ class CompletionsService(BaseService):
         WHERE TRUE
           AND c.verified
           AND c.legacy = FALSE
+          AND c.message_id IS NOT NULL
         ORDER BY c.inserted_at DESC
         LIMIT $1 OFFSET $2;
         """
@@ -1198,6 +1215,7 @@ class CompletionsService(BaseService):
         return msgspec.convert(rows, list[CompletionReadDTO])
 
     async def set_quality_vote_for_map_code(self, code: OverwatchCode, user_id: int, quality: int) -> None:
+        """Set the quality vote for a map code per user."""
         query = """
         WITH target_map AS (
             SELECT id AS map_id FROM core.maps WHERE code = $1
@@ -1217,6 +1235,7 @@ async def provide_completions_service(conn: Connection, state: State) -> Complet
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state: App state.
 
     Returns:
         CompletionsService: A new service instance bound to the given connection.
