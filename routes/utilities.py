@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+from datetime import datetime
 from logging import getLogger
 from typing import Annotated, Any, cast
 
@@ -418,6 +419,17 @@ class UtilitiesController(Controller):
         conn: Connection,
     ) -> Any:
         query = """
-            SELECT * FROM maps.clicks LIMIT 100;
+            SELECT id, map_id, user_id, source, user_agent, ip_hash, inserted_at, day_bucket FROM maps.clicks LIMIT 100;
         """
-        return msgspec.to_builtins(await conn.fetch(query))
+        return msgspec.convert(await conn.fetch(query), list[LogClicksDebug] | None)
+
+
+class LogClicksDebug(msgspec.Struct):
+    id: int | None
+    map_id: int | None
+    user_id: int | None
+    source: str | None
+    user_agent: str | None
+    ip_hash: str | None
+    inserted_at: datetime
+    day_bucket: int
