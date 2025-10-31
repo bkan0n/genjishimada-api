@@ -419,7 +419,8 @@ class UtilitiesController(Controller):
         conn: Connection,
     ) -> Any:
         query = """
-            SELECT id, map_id, user_id, source, user_agent, ip_hash, inserted_at, day_bucket FROM maps.clicks LIMIT 100;
+            SELECT id, map_id, user_id, source, user_agent, ip_hash, inserted_at, day_bucket
+            FROM maps.clicks ORDER BY inserted_at DESC LIMIT 100;
         """
         return msgspec.convert(await conn.fetch(query), list[LogClicksDebug] | None)
 
