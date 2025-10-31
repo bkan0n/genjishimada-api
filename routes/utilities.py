@@ -2,8 +2,9 @@ import hashlib
 import hmac
 import os
 from logging import getLogger
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
+import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import LogCreateDTO
 from genjipk_sdk.models.logging import MapClickCreateDTO
@@ -407,3 +408,16 @@ class UtilitiesController(Controller):
             ON CONFLICT ON CONSTRAINT u_click_unique_per_day DO NOTHING;
         """
         await conn.execute(query, data.code, data.user_id, data.source, ip_hash)
+
+    @get(
+        path="/log-map-click",
+        tags=["Utilities"],
+    )
+    async def get_log_map_clicks(
+        self,
+        conn: Connection,
+    ) -> Any:
+        query = """
+            SELECT * FROM maps.clicks LIMIT 100;
+        """
+        return msgspec.to_builtins(await conn.fetch(query))
