@@ -684,8 +684,8 @@ class CompletionsService(BaseService):
             (wm.rank IS NULL), -- rankable first
             wm.time,           -- best time first
             wm.inserted_at    -- tie-breaker - older submission first
-        {"LIMIT $2" if page_size == 0 else ""}
-        {"OFFSET $3" if page_size == 0 else ""}
+        {"LIMIT $2" if page_size else ""}
+        {"OFFSET $3" if page_size else ""}
         OFFSET $3;
         """
         if page_size == 0:
