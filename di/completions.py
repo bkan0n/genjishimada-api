@@ -686,7 +686,6 @@ class CompletionsService(BaseService):
             wm.inserted_at    -- tie-breaker - older submission first
         {"LIMIT $2" if page_size else ""}
         {"OFFSET $3" if page_size else ""}
-        OFFSET $3;
         """
         if page_size == 0:
             rows = await self._conn.fetch(query, code)
