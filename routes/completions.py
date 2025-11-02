@@ -361,3 +361,7 @@ class CompletionsController(Controller):
     ) -> None:
         """Set the quality vote for a map code for a user."""
         return await svc.set_quality_vote_for_map_code(code, data.user_id, data.quality)
+
+    @get(path="/upvoting/{message_id:int}")
+    async def get_upvotes_from_message_id(self, svc: CompletionsService, message_id: int) -> int:
+        return await svc.get_upvotes_from_message_id(message_id)

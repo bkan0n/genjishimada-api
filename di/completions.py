@@ -1049,6 +1049,12 @@ class CompletionsService(BaseService):
             data.flagged_by,
         )
 
+    async def get_upvotes_from_message_id(self, message_id: int) -> int:
+        """Get the upvotes for a particular completion by message_id."""
+        query = """SELECT count(*) as upvotes FROM completions.upvotes WHERE message_id=$1 GROUP BY message_id;"""
+        val = await self._conn.fetchval(query, message_id)
+        return val or 0
+
     async def upvote_submission(self, request: Request, data: UpvoteCreateDTO) -> UpvoteSubmissionReturnDTO:
         """Upvote a completion submission.
 
