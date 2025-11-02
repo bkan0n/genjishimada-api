@@ -207,7 +207,7 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         code: str,
-        page_size: Literal[10, 20, 25, 50] = 10,
+        page_size: Literal[10, 20, 25, 50, 0] = 10,
         page_number: int = 1,
     ) -> list[CompletionReadDTO]:
         """Get the leaderboard for a map.

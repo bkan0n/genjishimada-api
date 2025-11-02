@@ -540,7 +540,7 @@ class CompletionsService(BaseService):
             including medal eligibility and user display names.
 
         """
-        query = """
+        query = f"""
         WITH target_map AS (
             SELECT
                 id AS map_id,
@@ -684,10 +684,10 @@ class CompletionsService(BaseService):
             (wm.rank IS NULL), -- rankable first
             wm.time,           -- best time first
             wm.inserted_at    -- tie-breaker - older submission first
-        LIMIT $2
-        OFFSET $3;
+        {"LIMIT $2" if page_size == 0 else ""}
+        {"OFFSET $3" if page_size == 0 else ""};
         """
-        offset = (page_number - 1) * page_size
+        offset = 0 if page_size == 0 else (page_number - 1) * page_size
         rows = await self._conn.fetch(query, code, page_size, offset)
         models = msgspec.convert(rows, list[CompletionReadDTO])
 
