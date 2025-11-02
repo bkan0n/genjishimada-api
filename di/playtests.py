@@ -273,7 +273,8 @@ class PlaytestService(BaseService):
                 thread_id,
             )
             primary_creator_id = await self._conn.fetchval(
-                "SELECT user_id FROM maps.creators WHERE map_id=$1 AND is_primary;"
+                "SELECT user_id FROM maps.creators WHERE map_id=$1 AND is_primary;",
+                map_id,
             )
             code = await self._conn.fetchval("SELECT code FROM core.maps WHERE id=$1", map_id)
         payload = PlaytestApproveMQ(
