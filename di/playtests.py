@@ -21,10 +21,11 @@ from genjipk_sdk.models.maps import (
     PlaytestResetMQ,
 )
 from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Request
 from litestar.datastructures import State
 from litestar.exceptions import HTTPException
-from litestar.status_codes import HTTP_400_BAD_REQUEST
+from litestar.status_codes import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from utilities.errors import CustomHTTPException
 
@@ -100,6 +101,16 @@ class PlaytestService(BaseService):
         average = round(sum(values) / len(values), 2) if values else 0
         return PlaytestVotesAll(player_votes, average)
 
+    async def _check_if_map_code_and_thread_id_are_related(self, code: OverwatchCode, thread_id: int) -> None:
+        map_id = await self._conn.fetchval("SELECT id AS map_id FROM core.maps WHERE code=$1", code)
+        playtest_map_id = await self._conn.fetchval(
+            "SELECT map_id FROM playtests.votes WHERE playtest_thread_id=$1", thread_id
+        )
+        if map_id != playtest_map_id:
+            raise CustomHTTPException(
+                status_code=HTTP_404_NOT_FOUND, detail="This map code and playtest ID do not match."
+            )
+
     async def cast_vote(self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote) -> JobStatus:
         """Cast or update a vote, then publish MQ.
 
@@ -110,6 +121,7 @@ class PlaytestService(BaseService):
             data: Vote payload.
 
         """
+        await self._check_if_map_code_and_thread_id_are_related(data.code, thread_id)
         q = """
             WITH target_map AS (
                 SELECT id AS map_id FROM core.maps WHERE code = $4
@@ -241,14 +253,12 @@ class PlaytestService(BaseService):
 
         """
         async with self._conn.transaction():
-            row = await self._conn.fetchrow(
-                "SELECT map_id, code FROM playtests.meta WHERE thread_id=$1;",
+            map_id = await self._conn.fetchval(
+                "SELECT map_id FROM playtests.meta WHERE thread_id=$1;",
                 thread_id,
             )
-            if not row:
+            if not map_id:
                 raise CustomHTTPException("A map was not found that is associated with the given thread id.")
-            map_id = row["map_id"]
-            code = row["code"]
             difficulty = await self._conn.fetchval(
                 "SELECT avg(difficulty) FROM playtests.votes WHERE playtest_thread_id=$1;",
                 thread_id,
@@ -265,6 +275,7 @@ class PlaytestService(BaseService):
             primary_creator_id = await self._conn.fetchval(
                 "SELECT user_id FROM maps.creators WHERE map_id=$1 AND is_primary;"
             )
+            code = await self._conn.fetchval("SELECT code FROM core.maps WHERE id=$1", map_id)
         payload = PlaytestApproveMQ(
             code=code,
             thread_id=thread_id,
