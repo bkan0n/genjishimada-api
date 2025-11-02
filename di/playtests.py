@@ -20,7 +20,7 @@ from genjipk_sdk.models.maps import (
     PlaytestReadDTO,
     PlaytestResetMQ,
 )
-from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll
+from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll, convert_raw_difficulty_to_difficulty_all
 from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Request
 from litestar.datastructures import State
@@ -280,7 +280,7 @@ class PlaytestService(BaseService):
         payload = PlaytestApproveMQ(
             code=code,
             thread_id=thread_id,
-            difficulty=difficulty,
+            difficulty=convert_raw_difficulty_to_difficulty_all(difficulty),
             verifier_id=verifier_id,
             primary_creator_id=primary_creator_id,
         )
