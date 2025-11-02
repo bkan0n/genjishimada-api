@@ -411,6 +411,7 @@ class BaseMapsController(litestar.Controller):
                 creators=[x.name for x in _data.data.creators],
                 banner_url=_data.data.map_banner,
                 official=data.official,
+                title=data.title,
             )
 
             event = NewsfeedEvent(
