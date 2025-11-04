@@ -121,7 +121,7 @@ class PlaytestService(BaseService):
             SET difficulty = EXCLUDED.difficulty, updated_at = now();
         """
         try:
-            await self._conn.execute(q, user_id, thread_id, data.difficulty, data.code)
+            await self._conn.execute(q, user_id, thread_id, data.difficulty)
         except asyncpg.exceptions.CheckViolationError:
             raise HTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
