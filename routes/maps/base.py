@@ -11,6 +11,7 @@ from genjipk_sdk.models import (
     ArchivalStatusPatchDTO,
     Guide,
     GuideFull,
+    JobStatus,
     MapCreateDTO,
     MapMasteryCreateDTO,
     MapMasteryCreateReturnDTO,
@@ -28,6 +29,7 @@ from genjipk_sdk.models import (
     NewsfeedMapEdit,
     NewsfeedNewMap,
     NewsfeedUnarchive,
+    PlaytestCreatePartialDTO,
     QualityValueDTO,
     TrendingMapReadDTO,
 )
@@ -896,3 +898,17 @@ class BaseMapsController(litestar.Controller):
             limit (int): The number of maps to limit the query to.
         """
         return await svc.get_trending_maps(limit)
+
+    @litestar.post(
+        path="/{code:str}/playtest",
+        summary="Send Map to Playtest",
+        description="Send a currently approved map to playtesting.",
+    )
+    async def send_map_to_playtest(
+        self,
+        request: litestar.Request,
+        svc: MapService,
+        data: PlaytestCreatePartialDTO,
+    ) -> JobStatus:
+        """Send a map back to playtest."""
+        return await svc.send_map_to_playtest(data=data, request=request)

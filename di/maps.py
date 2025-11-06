@@ -11,6 +11,7 @@ from genjipk_sdk.models import (
     Creator,
     Guide,
     GuideFull,
+    JobStatus,
     MapCreateDTO,
     MapMasteryCreateDTO,
     MapMasteryCreateReturnDTO,
@@ -757,6 +758,30 @@ class MapService(BaseService):
             final_code = data.code if data.code is not msgspec.UNSET else code
             return await self.fetch_maps(single=True, filters=MapSearchFilters(code=final_code))
 
+    async def send_map_to_playtest(
+        self,
+        *,
+        data: PlaytestCreatePartialDTO,
+        request: Request,
+    ) -> JobStatus:
+        map_id = await self._lookup_id(data.code)
+        current_map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        if current_map_data.playtesting == "In Progress":
+            raise CustomHTTPException(detail="Map is already in playtest", status_code=HTTP_400_BAD_REQUEST)
+        async with self._conn.transaction():
+            await self.convert_map_to_legacy(data.code)
+            await self.patch_map(data.code, MapPatchDTO(playtesting="In Progress"))
+            playtest_id = await self.create_playtest_meta_partial(data)
+        message_data = MessageQueueCreatePlaytest(data.code, playtest_id)
+        idempotency_key = f"map:send-to-playtest:{map_id}:{playtest_id}"
+        job_status = await self.publish_message(
+            routing_key="api.playtest.create",
+            data=message_data,
+            headers=request.headers,
+            idempotency_key=idempotency_key,
+        )
+        return job_status
+
     async def create_playtest_meta_partial(self, data: PlaytestCreatePartialDTO) -> int:
         """Create Playtest Meta Partial.
 
@@ -801,17 +826,18 @@ class MapService(BaseService):
                 m.code,
                 m.map_name,
                 m.checkpoints,
-                m.difficulty,
+                pm.initial_difficulty AS difficulty,
                 array_agg(DISTINCT u.nickname) AS creator_names
             FROM core.maps AS m
             LEFT JOIN maps.creators AS c ON c.map_id = m.id AND c.is_primary
             LEFT JOIN core.users AS u ON c.user_id = u.id
+            LEFT JOIN playtests.meta AS pm ON m.id = pm.map_id
             WHERE m.id = $1
             GROUP BY m.id,
                 m.code,
                 m.map_name,
                 m.checkpoints,
-                m.difficulty,
+                pm.initial_difficulty,
                 u.id;
 
         """
@@ -1506,7 +1532,9 @@ class MapService(BaseService):
             ValueError: If any pending verifications exist.
         """
         if await self._check_if_any_pending_verifications(code):
-            raise ValueError("Pending verifications exist for this map code.")
+            raise CustomHTTPException(
+                detail="Pending verifications exist for this map code.", status_code=HTTP_400_BAD_REQUEST
+            )
         async with self._conn.transaction():
             await self._remove_map_medal_entries(code)
             return await self._convert_completions_to_legacy(code)
