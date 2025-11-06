@@ -24,6 +24,7 @@ from genjipk_sdk.models import (
     QualityValueDTO,
     TrendingMapReadDTO,
 )
+from genjipk_sdk.models.jobs import CreateMapReturnDTO
 from genjipk_sdk.utilities import (
     DIFFICULTY_MIDPOINTS,
     DIFFICULTY_RANGES_ALL,
@@ -32,7 +33,7 @@ from genjipk_sdk.utilities import (
     DifficultyTop,
     convert_raw_difficulty_to_difficulty_all,
 )
-from genjipk_sdk.utilities.types import (
+from genjipk_sdk.utilities._types import (
     GuideURL,
     MapCategory,
     Mechanics,
@@ -693,7 +694,7 @@ def _handle_exceptions(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable
 
 class MapService(BaseService):
     @_handle_exceptions
-    async def create_map(self, data: MapCreateDTO, request: Request) -> MapReadDTO:
+    async def create_map(self, data: MapCreateDTO, request: Request) -> CreateMapReturnDTO:
         """Create a map.
 
         Within a transaction, inserts the core map row and all related data (creators, guide,
@@ -702,7 +703,7 @@ class MapService(BaseService):
 
         Args:
             data (MapCreateDTO): Map creation payload.
-            state (State): Application state used for message publishing.
+            request (Request): Request.
 
         Returns:
             MapReadDTO: The created map.
@@ -715,15 +716,21 @@ class MapService(BaseService):
             await self._insert_mechanics(map_id, data.mechanics, remove_existing=False)
             await self._insert_restrictions(map_id, data.restrictions, remove_existing=False)
             await self._insert_medals(map_id, data.medals, remove_existing=False)
+            job_status = None
             if data.playtesting == "In Progress":
                 metadata = PlaytestCreatePartialDTO(data.code, data.difficulty)
                 playtest_id = await self.create_playtest_meta_partial(metadata)
                 message_data = MessageQueueCreatePlaytest(data.code, playtest_id)
-                await self.publish_message(
-                    routing_key="api.playtest.create", data=message_data, headers=request.headers
+                idempotency_key = f"map:submit:{map_id}"
+                job_status = await self.publish_message(
+                    routing_key="api.playtest.create",
+                    data=message_data,
+                    headers=request.headers,
+                    idempotency_key=idempotency_key,
                 )
 
-        return await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        return CreateMapReturnDTO(job_status, map_data)
 
     @_handle_exceptions
     async def patch_map(self, code: OverwatchCode, data: MapPatchDTO) -> MapReadDTO:
@@ -852,8 +859,6 @@ class MapService(BaseService):
         """
         builder = MapSearchSQLBuilder(filters)
         query, args = builder.build()
-        print(query)
-        print(args)
         rows = await self._conn.fetch(query, *args)
         _models = msgspec.convert(rows, list[MapReadDTO])
         if not _models:
@@ -959,7 +964,7 @@ class MapService(BaseService):
         query = """
             INSERT INTO core.maps (
                 code, map_name, category, checkpoints, description, difficulty,
-                raw_difficulty, hidden, official, archived, playtesting, title, custom_banner
+                raw_difficulty, hidden, archived, official, playtesting, title, custom_banner
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
         """
@@ -1353,7 +1358,6 @@ class MapService(BaseService):
         RETURNING user_id, url;
         """
         res = await self._conn.fetchrow(query, code, data.user_id, data.url)
-        # TODO Guide MQ
         return msgspec.convert(res, Guide)
 
     async def get_affected_users(self, code: OverwatchCode) -> list[int]:
@@ -1524,7 +1528,8 @@ class MapService(BaseService):
         """
         await self._conn.execute(query, map_id, data.value)
 
-    async def get_trending_maps(self, limit: Literal[1, 3, 5, 10, 15, 20, 25]):
+    async def get_trending_maps(self, limit: Literal[1, 3, 5, 10, 15, 20, 25]) -> list[TrendingMapReadDTO]:
+        """Get trending maps."""
         query = """
         WITH
             params AS (
@@ -1573,7 +1578,8 @@ class MapService(BaseService):
 
             comps_curr AS (
                 SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - c.inserted_at)) / 86400.0))::numeric AS w_completions
+                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - c.inserted_at)) / 86400.0))::numeric
+                    AS w_completions
                 FROM core.completions c
                 CROSS JOIN bounds b
                 WHERE c.inserted_at >= b.curr_start AND c.inserted_at < b.curr_end
@@ -1584,7 +1590,8 @@ class MapService(BaseService):
             ),
             ups_curr AS (
                 SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - u.inserted_at)) / 86400.0))::numeric AS w_upvotes
+                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - u.inserted_at)) / 86400.0))::numeric
+                    AS w_upvotes
                 FROM completions.upvotes u
                 JOIN core.completions c ON c.message_id = u.message_id
                 CROSS JOIN bounds b
@@ -1594,8 +1601,12 @@ class MapService(BaseService):
             -- Quality: all-time with decay (no time filter)
             q_curr AS (
                 SELECT r.map_id,
-                    SUM(r.quality * exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - GREATEST(r.updated_at, r.created_at))) / 86400.0))::numeric AS num,
-                    SUM(           exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - GREATEST(r.updated_at, r.created_at))) / 86400.0))::numeric AS den
+                    SUM(r.quality * exp(-b.lambda * EXTRACT(
+                        EPOCH FROM (b.curr_end - GREATEST(r.updated_at, r.created_at))) / 86400.0)
+                    )::numeric AS num,
+                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (
+                        b.curr_end - GREATEST(r.updated_at, r.created_at))) / 86400.0)
+                    )::numeric AS den
                 FROM maps.ratings r
                 CROSS JOIN bounds b
                 GROUP BY r.map_id
@@ -1655,7 +1666,8 @@ class MapService(BaseService):
 
             comps_prev AS (
                 SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - c.inserted_at)) / 86400.0))::numeric AS w_completions_prev
+                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - c.inserted_at)) / 86400.0))::numeric
+                    AS w_completions_prev
                 FROM core.completions c
                 CROSS JOIN bounds b
                 WHERE c.inserted_at >= b.prev_start AND c.inserted_at < b.prev_end
@@ -1665,7 +1677,8 @@ class MapService(BaseService):
             ),
             ups_prev AS (
                 SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - u.inserted_at)) / 86400.0))::numeric AS w_upvotes_prev
+                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - u.inserted_at)) / 86400.0))::numeric
+                    AS w_upvotes_prev
                 FROM completions.upvotes u
                 JOIN core.completions c ON c.message_id = u.message_id
                 CROSS JOIN bounds b
@@ -1724,25 +1737,33 @@ class MapService(BaseService):
                     a.map_id, a.code, a.map_name, a.created_at,
                     a.w_clicks, a.w_completions, a.w_upvotes, a.w_quality,
                     a.clicks_count, a.completions_count, a.upvotes_count,
-                    LEAST(1.0, CASE WHEN p.p95_clicks      > 0 THEN log(1 + a.w_clicks)      / log(1 + p.p95_clicks)      ELSE 0 END) AS n_clicks,
-                    LEAST(1.0, CASE WHEN p.p95_completions > 0 THEN log(1 + a.w_completions) / log(1 + p.p95_completions) ELSE 0 END) AS n_completions,
-                    LEAST(1.0, CASE WHEN p.p95_upvotes     > 0 THEN log(1 + a.w_upvotes)     / log(1 + p.p95_upvotes)     ELSE 0 END) AS n_upvotes,
+                    LEAST(1.0, CASE WHEN p.p95_clicks      > 0 THEN log(1 + a.w_clicks)      / log(1 + p.p95_clicks)
+                    ELSE 0 END) AS n_clicks,
+                    LEAST(1.0, CASE WHEN p.p95_completions > 0 THEN log(1 + a.w_completions) / log(1 + p.p95_completions
+                    )
+                    ELSE 0 END) AS n_completions,
+                    LEAST(1.0, CASE WHEN p.p95_upvotes     > 0 THEN log(1 + a.w_upvotes)     / log(1 + p.p95_upvotes)
+                    ELSE 0 END) AS n_upvotes,
                     LEAST(1.0, CASE WHEN p.p95_quality     > 0 AND a.w_quality IS NOT NULL
-                                        THEN log(1 + a.w_quality)     / log(1 + p.p95_quality)     ELSE 0 END) AS n_quality
+                                        THEN log(1 + a.w_quality)     / log(1 + p.p95_quality)     ELSE 0 END
+                            ) AS n_quality
                 FROM agg_curr a CROSS JOIN pcts p
             ),
             momentum AS (
                 SELECT
                     s.map_id,
-                    (s.w_clicks + s.w_completions + s.w_upvotes)                                                       AS curr_vol,
-                    (COALESCE(pv.w_clicks_prev,0) + COALESCE(pv.w_completions_prev,0) + COALESCE(pv.w_upvotes_prev,0)) AS prev_vol
+                    (s.w_clicks + s.w_completions + s.w_upvotes) AS curr_vol,
+                    (
+                        COALESCE(pv.w_clicks_prev,0) + COALESCE(pv.w_completions_prev,0) + COALESCE(pv.w_upvotes_prev,0)
+                    ) AS prev_vol
                 FROM scored s
                 LEFT JOIN agg_prev pv ON pv.map_id = s.map_id
             ),
             final AS (
                 SELECT
                     s.*,
-                    CASE WHEN m.prev_vol > 0 THEN (m.curr_vol - m.prev_vol) / m.prev_vol ELSE NULL END AS momentum_ratio,
+                    CASE WHEN m.prev_vol > 0
+                    THEN (m.curr_vol - m.prev_vol) / m.prev_vol ELSE NULL END AS momentum_ratio,
                     1.0 + 0.30 * exp(-EXTRACT(EPOCH FROM (now() - s.created_at)) / 86400.0 / 30.0)     AS new_map_boost
                 FROM scored s
                 JOIN momentum m ON m.map_id = s.map_id
@@ -1794,6 +1815,7 @@ async def provide_map_service(conn: Connection, state: State) -> MapService:
 
     Args:
         conn (Connection): Active asyncpg connection.
+        state: Application state.
 
     Returns:
         MapService: New service instance.

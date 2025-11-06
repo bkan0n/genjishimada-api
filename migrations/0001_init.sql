@@ -1,4 +1,5 @@
 BEGIN;
+SET LOCAL migration.skip_verified_check = true;
 
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -313,7 +314,26 @@ CREATE OR REPLACE FUNCTION playtests.enforce_verified_completion_immediate()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  skip_mode boolean := current_setting('migration.skip_verified_check', true)::boolean;
 BEGIN
+  -- During migration: silently skip invalid rows
+  IF skip_mode THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM core.completions c
+      WHERE c.user_id = NEW.user_id
+        AND c.map_id  = NEW.map_id
+        AND c.verified = TRUE
+        AND c.legacy   = FALSE
+    ) THEN
+      RETURN NULL;  -- skip this row
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  -- Normal production behavior: raise exception
   IF NOT EXISTS (
     SELECT 1
     FROM core.completions c
@@ -325,12 +345,14 @@ BEGIN
     RAISE EXCEPTION
       'User % has no verified non-legacy completion for map %',
       NEW.user_id, NEW.map_id
-      USING ERRCODE = '23514'; -- check_violation
+      USING ERRCODE = '23514';
   END IF;
 
   RETURN NEW;
 END
 $$;
+
+
 
 CREATE TRIGGER votes_requires_verified_completion
 BEFORE INSERT OR UPDATE OF user_id, map_id
@@ -445,6 +467,8 @@ AS $$
 DECLARE
   best_time          numeric;
   best_is_completion boolean;
+  best_completed_at  timestamptz;
+  map_code           text;
 BEGIN
   -- Any write that sets the row to legacy = TRUE is always allowed.
   IF NEW.legacy IS TRUE THEN
@@ -452,12 +476,13 @@ BEGIN
   END IF;
 
   -- Serialize per (user,map) to avoid racey double-inserts/updates.
-  PERFORM pg_advisory_xact_lock(NEW.user_id, NEW.map_id);
+  PERFORM pg_advisory_xact_lock((NEW.user_id::bigint << 32) | NEW.map_id::bigint);
 
-  -- Find the fastest existing NON-LEGACY row for this user/map (verified or not).
-  SELECT c.time, c.completion
-    INTO best_time, best_is_completion
+  -- Find the best non-legacy run for this user/map.
+  SELECT c.time, c.completion, c.inserted_at, m.code
+    INTO best_time, best_is_completion, best_completed_at, map_code
   FROM core.completions c
+  JOIN core.maps m ON m.id = c.map_id
   WHERE c.user_id = NEW.user_id
     AND c.map_id  = NEW.map_id
     AND c.legacy  = FALSE
@@ -469,30 +494,33 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Apply your rules
+  -- NEW is chronologically older -> skip checks.
+  IF NEW.inserted_at IS NOT NULL AND NEW.inserted_at < best_completed_at THEN
+    RETURN NEW;
+  END IF;
+
+  -- Apply speed rules
   IF NEW.completion IS TRUE THEN
-    -- Completion must always beat the fastest non-legacy time.
     IF NEW.time >= best_time THEN
       RAISE EXCEPTION
-        'completion=TRUE time % must be strictly faster than current best % (user %, map %)',
-        NEW.time, best_time, NEW.user_id, NEW.map_id
+        'completion=TRUE time % must be strictly faster than current best % (user %, map %, code %)',
+        NEW.time, best_time, NEW.user_id, NEW.map_id, map_code
         USING ERRCODE = '23514';
     END IF;
 
   ELSE
-    -- completion=FALSE
     IF best_is_completion IS FALSE AND NEW.time >= best_time THEN
       RAISE EXCEPTION
-        'completion=FALSE time % must be strictly faster than current best non-completion % (user %, map %)',
-        NEW.time, best_time, NEW.user_id, NEW.map_id
+        'completion=FALSE time % must be strictly faster than current best non-completion % (user %, map %, code %)',
+        NEW.time, best_time, NEW.user_id, NEW.map_id, map_code
         USING ERRCODE = '23514';
     END IF;
-    -- If best is a completion=TRUE, slower is allowed.
   END IF;
 
   RETURN NEW;
 END
 $$;
+
 
 DROP TRIGGER IF EXISTS trg_enforce_speed_rules_nonlegacy_only ON core.completions;
 
@@ -802,7 +830,8 @@ CREATE TABLE IF NOT EXISTS lootbox.xp
 (
     user_id bigint  NOT NULL PRIMARY KEY
         CONSTRAINT xp_users_user_id_fk REFERENCES core.users (id) ON UPDATE CASCADE,
-    amount  integer NOT NULL
+    amount  integer NOT NULL,
+    type    text DEFAULT 'Other'
 );
 
 
@@ -926,4 +955,87 @@ CREATE TABLE IF NOT EXISTS public.analytics (
 CREATE INDEX IF NOT EXISTS analytics_date_idx  ON public.analytics (created_at);
 CREATE INDEX IF NOT EXISTS analytics_command_name_idx ON public.analytics (command_name);
 CREATE INDEX IF NOT EXISTS analytics_command_name_date_idx ON public.analytics (command_name, created_at);
+
+
+
+CREATE TYPE job_status AS ENUM ('queued','processing','succeeded','failed','timeout');
+
+CREATE TABLE public.jobs (
+                           id          uuid PRIMARY KEY,
+                           action      text NOT NULL,
+                           status      job_status NOT NULL DEFAULT 'queued',
+                           error_code  text,
+                           error_msg   text,
+                           attempts    int NOT NULL DEFAULT 0,
+                           created_at  timestamptz NOT NULL DEFAULT now(),
+                           started_at  timestamptz,
+                           finished_at timestamptz
+);
+
+CREATE INDEX ON public.jobs (status, created_at);
+
+create table public.tags
+(
+    id          serial
+        primary key,
+    name        text,
+    content     text,
+    owner_id    bigint,
+    uses        integer   default 0,
+    location_id bigint,
+    created_at  timestamp default (now() AT TIME ZONE 'utc'::text)
+);
+
+create table public.tag_lookup
+(
+    id          serial
+        primary key,
+    name        text,
+    location_id bigint,
+    owner_id    bigint,
+    created_at  timestamp default (now() AT TIME ZONE 'utc'::text),
+    tag_id      integer
+        references public.tags
+            on delete cascade
+);
+
+
+create index tag_lookup_location_id_idx
+    on public.tag_lookup (location_id);
+
+create index tag_lookup_name_idx
+    on public.tag_lookup (name);
+
+create index tag_lookup_name_lower_idx
+    on public.tag_lookup (lower(name));
+
+create index tag_lookup_name_trgm_idx
+    on public.tag_lookup using gin (name public.gin_trgm_ops);
+
+create unique index tag_lookup_uniq_idx
+    on public.tag_lookup (lower(name), location_id);
+
+
+create index tags_location_id_idx
+    on public.tags (location_id);
+
+create index tags_name_idx
+    on public.tags (name);
+
+create index tags_name_lower_idx
+    on public.tags (lower(name));
+
+create index tags_name_trgm_idx
+    on public.tags using gin (name public.gin_trgm_ops);
+
+create unique index tags_uniq_idx
+    on public.tags (lower(name), location_id);
+
+
+CREATE TABLE IF NOT EXISTS public.processed_messages (
+    idempotency_key text PRIMARY KEY,
+    processed_at timestamptz NOT NULL DEFAULT now()
+);
+
+
 COMMIT;

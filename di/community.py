@@ -14,7 +14,7 @@ from genjipk_sdk.models import (
     TimePlayedPerRankResponse,
     TopCreatorsResponse,
 )
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar.datastructures import State
 
 from .base import BaseService
@@ -649,6 +649,7 @@ async def provide_community_service(conn: Connection, state: State) -> Community
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state (State): App state.
 
     Returns:
         CommunityService: A new service instance bound to the given connection.

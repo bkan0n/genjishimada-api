@@ -3,8 +3,9 @@ from __future__ import annotations
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import ChangeRequestCreateDTO, ChangeRequestReadDTO, StaleChangeRequestReadDTO
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar.datastructures import State
+from litestar.di import Provide
 
 from .base import BaseService
 
@@ -142,9 +143,13 @@ async def provide_change_requests_service(conn: Connection, state: State) -> Cha
 
     Args:
         conn (Connection): Active asyncpg connection.
+        state (State): App state.
 
     Returns:
         ChangeRequestsService: A new service instance bound to `conn`.
 
     """
     return ChangeRequestsService(conn=conn, state=state)
+
+
+dependencies = {"svc": Provide(provide_change_requests_service)}

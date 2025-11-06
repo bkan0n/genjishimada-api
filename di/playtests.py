@@ -1,8 +1,10 @@
 from typing import Any
 
+import asyncpg
 import msgspec
 from asyncpg import Connection
 from genjipk_sdk.models import (
+    JobStatus,
     PlaytestAssociateIDThread,
     PlaytestPatchDTO,
     PlaytestVote,
@@ -18,9 +20,11 @@ from genjipk_sdk.models.maps import (
     PlaytestReadDTO,
     PlaytestResetMQ,
 )
-from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll
+from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll, convert_raw_difficulty_to_difficulty_all
 from litestar import Request
 from litestar.datastructures import State
+from litestar.exceptions import HTTPException
+from litestar.status_codes import HTTP_400_BAD_REQUEST
 
 from utilities.errors import CustomHTTPException
 
@@ -96,11 +100,11 @@ class PlaytestService(BaseService):
         average = round(sum(values) / len(values), 2) if values else 0
         return PlaytestVotesAll(player_votes, average)
 
-    async def cast_vote(self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote) -> None:
+    async def cast_vote(self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote) -> JobStatus:
         """Cast or update a vote, then publish MQ.
 
         Args:
-            state: App state (for MQ).
+            request (Request): Request obj.
             thread_id: Forum thread ID.
             user_id: Voter's user ID.
             data: Vote payload.
@@ -108,7 +112,7 @@ class PlaytestService(BaseService):
         """
         q = """
             WITH target_map AS (
-                SELECT id AS map_id FROM core.maps WHERE code = $4
+                SELECT map_id FROM playtests.meta WHERE thread_id = $2
             )
             INSERT INTO playtests.votes (user_id, playtest_thread_id, difficulty, map_id)
             SELECT $1, $2, $3, target_map.map_id
@@ -116,30 +120,40 @@ class PlaytestService(BaseService):
             ON CONFLICT (user_id, map_id, playtest_thread_id) DO UPDATE
             SET difficulty = EXCLUDED.difficulty, updated_at = now();
         """
-        async with self._conn.transaction():
-            await self._conn.execute(q, user_id, thread_id, data.difficulty, data.code)
-
+        try:
+            await self._conn.execute(q, user_id, thread_id, data.difficulty)
+        except asyncpg.exceptions.CheckViolationError:
+            raise HTTPException(
+                status_code=HTTP_400_BAD_REQUEST,
+                extra={"msg": "This user does not have a verified, non-legacy record associated with this map code"},
+            )
         payload = PlaytestVoteCastMQ(
             thread_id=thread_id,
             voter_id=user_id,
             difficulty_value=data.difficulty,
         )
-        await self.publish_message(routing_key="api.playtest.vote.cast", data=payload, headers=request.headers)
+        return await self.publish_message(routing_key="api.playtest.vote.cast", data=payload, headers=request.headers)
 
-    async def delete_vote(self, *, request: Request, thread_id: int, user_id: int) -> None:
+    async def delete_vote(self, *, request: Request, thread_id: int, user_id: int) -> JobStatus:
         """Remove a user's vote, then publish MQ.
 
         Args:
-            state: App state (for MQ).
+            request (Request): Request obj.
             thread_id: Forum thread ID.
             user_id: Voter's user ID.
 
         """
+        vote_check_q = "SELECT EXISTS(SELECT 1 FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2);"
+        if not await self._conn.fetchval(vote_check_q, thread_id, user_id):
+            raise CustomHTTPException(
+                "There is no vote asssociated with this playtest thread and user id.", status_code=HTTP_400_BAD_REQUEST
+            )
+
         q = "DELETE FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2"
         await self._conn.execute(q, thread_id, user_id)
 
         payload = PlaytestVoteRemovedMQ(thread_id=thread_id, voter_id=user_id)
-        await self.publish_message(routing_key="api.playtest.vote.remove", data=payload, headers=request.headers)
+        return await self.publish_message(routing_key="api.playtest.vote.remove", data=payload, headers=request.headers)
 
     async def delete_all_votes(self, *, state: State, thread_id: int) -> None:
         """Remove all votes for a playtest (used by moderators).
@@ -211,14 +225,14 @@ class PlaytestService(BaseService):
         *,
         thread_id: int,
         verifier_id: int,
-    ) -> None:
+    ) -> JobStatus:
         """Approve a map's playtest.
 
         Marks the map as approved, updates its difficulty, and completes the playtest metadata.
         After the transaction commits, publishes a `PlaytestApprove` message to the queue.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             code (str): Map code being approved.
             thread_id (int): Associated playtest thread ID.
             difficulty (DifficultyAll): Finalized difficulty rating.
@@ -227,14 +241,12 @@ class PlaytestService(BaseService):
 
         """
         async with self._conn.transaction():
-            row = await self._conn.fetchrow(
-                "SELECT map_id, code FROM playtests.meta WHERE thread_id=$1;",
+            map_id = await self._conn.fetchval(
+                "SELECT map_id FROM playtests.meta WHERE thread_id=$1;",
                 thread_id,
             )
-            if not row:
+            if not map_id:
                 raise CustomHTTPException("A map was not found that is associated with the given thread id.")
-            map_id = row["map_id"]
-            code = row["code"]
             difficulty = await self._conn.fetchval(
                 "SELECT avg(difficulty) FROM playtests.votes WHERE playtest_thread_id=$1;",
                 thread_id,
@@ -249,19 +261,23 @@ class PlaytestService(BaseService):
                 thread_id,
             )
             primary_creator_id = await self._conn.fetchval(
-                "SELECT user_id FROM maps.creators WHERE map_id=$1 AND is_primary;"
+                "SELECT user_id FROM maps.creators WHERE map_id=$1 AND is_primary;",
+                map_id,
             )
+            code = await self._conn.fetchval("SELECT code FROM core.maps WHERE id=$1", map_id)
         payload = PlaytestApproveMQ(
             code=code,
             thread_id=thread_id,
-            difficulty=difficulty,
+            difficulty=convert_raw_difficulty_to_difficulty_all(difficulty),
             verifier_id=verifier_id,
             primary_creator_id=primary_creator_id,
         )
-        await self.publish_message(
+        idempotency_key = f"playtest:approve:{thread_id}"
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.approve",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
     async def force_accept(
@@ -271,14 +287,14 @@ class PlaytestService(BaseService):
         thread_id: int,
         difficulty: DifficultyAll,
         verifier_id: int,
-    ) -> None:
+    ) -> JobStatus:
         """Force accept a playtest regardless of normal flow.
 
         Sets the map as approved, updates difficulty, and marks the playtest as completed.
         After the transaction commits, publishes a `PlaytestForceAccept` message.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             code (str): Map code being force-accepted.
             thread_id (int): Associated playtest thread ID.
             difficulty (DifficultyAll): Finalized difficulty rating.
@@ -306,10 +322,12 @@ class PlaytestService(BaseService):
             difficulty=difficulty,
             verifier_id=verifier_id,
         )
-        await self.publish_message(
+        idempotency_key = f"playtest:force_accept:{thread_id}"
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.force_accept",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
     async def force_deny(
@@ -319,14 +337,14 @@ class PlaytestService(BaseService):
         thread_id: int,
         verifier_id: int,
         reason: str,
-    ) -> None:
+    ) -> JobStatus:
         """Force deny a playtest.
 
         Marks the map as rejected, hides it, and completes the playtest metadata.
         After the transaction commits, publishes a `PlaytestForceDeny` message.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             thread_id (int): Associated playtest thread ID.
             verifier_id (int): ID of the verifier.
             reason (str): Explanation for denial.
@@ -350,10 +368,12 @@ class PlaytestService(BaseService):
             verifier_id=verifier_id,
             reason=reason,
         )
-        await self.publish_message(
+        idempotency_key = f"playtest:force_deny:{thread_id}"
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.force_deny",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
     async def reset(  # noqa: PLR0913
@@ -365,14 +385,14 @@ class PlaytestService(BaseService):
         reason: str,
         remove_votes: bool,
         remove_completions: bool,
-    ) -> None:
+    ) -> JobStatus:
         """Reset a playtest.
 
         Optionally removes votes and/or completions, while leaving the map entry intact.
         After cleanup, publishes a `PlaytestReset` message.
 
         Args:
-            state (State): Application state for publishing.
+            request (Request): Request obj.
             thread_id (int): Associated playtest thread ID.
             verifier_id (int): ID of the verifier initiating the reset.
             reason (str): Explanation for the reset.
@@ -393,10 +413,12 @@ class PlaytestService(BaseService):
             remove_votes=remove_votes,
             remove_completions=remove_completions,
         )
-        await self.publish_message(
+        idempotency_key = f"playtest:reset:{thread_id}"
+        return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.reset",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
 

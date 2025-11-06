@@ -31,8 +31,9 @@ from genjipk_sdk.models import (
     QualityValueDTO,
     TrendingMapReadDTO,
 )
+from genjipk_sdk.models.jobs import CreateMapReturnDTO
 from genjipk_sdk.utilities import DifficultyTop
-from genjipk_sdk.utilities.types import (
+from genjipk_sdk.utilities._types import (
     GuideURL,
     MapCategory,
     Mechanics,
@@ -214,14 +215,15 @@ async def _friendly_value(
 
     if field == "medals":
         return (
-            f"<a:_:1406302950443192320>: {value['gold']} "
-            f"<a:_:1406302952263782466>: {value['silver']} "
-            f"<a:_:1406300035624341604>: {value['bronze']} "
+            f"\n<a:_:1406302950443192320>: {value.gold}\n"
+            f"<a:_:1406302952263782466>: {value.silver}\n"
+            f"<a:_:1406300035624341604>: {value.bronze}\n"
         )
 
     b = _to_builtin(value)
     if b is None:
         return _friendly_none(None)
+
     return str(b)
 
 
@@ -385,7 +387,7 @@ class BaseMapsController(litestar.Controller):
         data: MapCreateDTO,
         newsfeed: NewsfeedService,
         users: UserService,
-    ) -> MapReadDTO:
+    ) -> CreateMapReturnDTO:
         """Submit a map of any type.
 
         Args:
@@ -394,20 +396,22 @@ class BaseMapsController(litestar.Controller):
             data (MapCreateDTO): New map payload.
             newsfeed (NewsfeedService): Service handling newsfeed.
             users (UserService): Service handling user data.
+            request (Request): Request obj.
 
         Returns:
             MapReadDTO: Created map.
 
         """
-        map_data = await svc.create_map(data, request)
+        _data = await svc.create_map(data, request)
         if data.playtesting == "Approved":
             event_payload = NewsfeedNewMap(
-                code=map_data.code,
-                map_name=map_data.map_name,
-                difficulty=map_data.difficulty,
-                creators=[x.name for x in map_data.creators],
-                banner_url=map_data.map_banner,
+                code=_data.data.code,
+                map_name=_data.data.map_name,
+                difficulty=_data.data.difficulty,
+                creators=[x.name for x in _data.data.creators],
+                banner_url=_data.data.map_banner,
                 official=data.official,
+                title=data.title,
             )
 
             event = NewsfeedEvent(
@@ -418,9 +422,9 @@ class BaseMapsController(litestar.Controller):
             )
             await newsfeed.create_and_publish(event, headers=request.headers)
 
-        return map_data
+        return _data
 
-    async def _generate_patch_newsfeed(
+    async def _generate_patch_newsfeed(  # noqa: PLR0913
         self,
         newsfeed: "NewsfeedService",
         old_data: "MapReadDTO",
@@ -452,6 +456,7 @@ class BaseMapsController(litestar.Controller):
             event_type: Event type label or enum value (defaults to ``"map_edit"``).
             get_creator_name: Optional resolver for creator names by ID when the
                 patch omits names.
+            request (Request): Request obj.
 
         Returns:
             None. Publishes an event only if there are material changes; otherwise no-op.
@@ -502,7 +507,7 @@ class BaseMapsController(litestar.Controller):
         summary="Update Map",
         description=("Patch an existing map by code using a partial update payload. Returns the updated map."),
     )
-    async def update_map(
+    async def update_map(  # noqa: PLR0913
         self,
         code: OverwatchCode,
         data: MapPatchDTO,
@@ -519,6 +524,7 @@ class BaseMapsController(litestar.Controller):
             svc (MapService): Injected map service.
             newsfeed (NewsfeedService): Service handling newsfeed.
             users (UserService): Service handling user data.
+            request (Request): Request obj.
 
         Returns:
             MapReadDTO: Updated map.
@@ -658,7 +664,7 @@ class BaseMapsController(litestar.Controller):
         summary="Create Guide",
         description="Create a new guide for the specified map.",
     )
-    async def create_guide(
+    async def create_guide(  # noqa: PLR0913
         self,
         svc: MapService,
         code: OverwatchCode,
@@ -675,6 +681,7 @@ class BaseMapsController(litestar.Controller):
             users (UserService): Service handling user data.
             code (OverwatchCode): Map code.
             data (Guide): Guide payload.
+            request (Request): Request obj.
 
         Returns:
             Guide: Created guide.
@@ -762,6 +769,7 @@ class BaseMapsController(litestar.Controller):
         code: OverwatchCode,
         newsfeed: NewsfeedService,
         request: litestar.Request,
+        reason: str = "",
     ) -> None:
         """Convert completions for a map to legacy and remove medals.
 
@@ -769,10 +777,12 @@ class BaseMapsController(litestar.Controller):
             svc (MapService): Injected map service.
             newsfeed (NewsfeedService): Service handling newsfeed.
             code (OverwatchCode): Map code to convert.
+            request (Request): Request obj.
+            reason (str): Add a reason to why the map was converted.
 
         """
         affected_count = await svc.convert_map_to_legacy(code)
-        event_payload = NewsfeedLegacyRecord(code=code, affected_count=affected_count, reason="")
+        event_payload = NewsfeedLegacyRecord(code=code, affected_count=affected_count, reason=reason)
         event = NewsfeedEvent(
             id=None, timestamp=dt.datetime.now(dt.timezone.utc), payload=event_payload, event_type="legacy_record"
         )
@@ -799,11 +809,9 @@ class BaseMapsController(litestar.Controller):
         """Archive or unarchive one or more maps.
 
         Args:
-            state (State): Application state used to publish the archive event.
+            request (Request): Request obj.
             svc (MapService): Service handling archive and unarchive operations.
             newsfeed (NewsfeedService): Service handling newsfeed.
-            code (OverwatchCode): Map code parameter accepted for route compatibility.
-                Not used directly by this handler.
             data (ArchivalStatusPatchDTO): Patch payload containing the desired status
                 and the list of map ``codes`` to act upon.
 
@@ -869,7 +877,6 @@ class BaseMapsController(litestar.Controller):
             code (OverwatchCode): The map code to overwrite.
             data (QualityVoteDTO): Data for overwriting.
         """
-        # TODO: Newsfeed here, special cased
         return await svc.override_map_quality_votes(code, data)
 
     @litestar.post(

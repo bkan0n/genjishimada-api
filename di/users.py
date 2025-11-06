@@ -438,6 +438,7 @@ async def provide_user_service(conn: Connection, state: State) -> UserService:
 
     Args:
         conn (asyncpg.Connection): Active asyncpg connection.
+        state (State): Application state.
 
     Returns:
         UserService: A new service instance bound to the given connection.

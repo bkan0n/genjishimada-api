@@ -15,8 +15,9 @@ from genjipk_sdk.models.completions import (
     SuspiciousCompletionWriteDTO,
     UpvoteCreateDTO,
 )
+from genjipk_sdk.models.jobs import JobStatus, SubmitCompletionReturnDTO, UpvoteSubmissionReturnDTO
 from genjipk_sdk.utilities import DifficultyAll
-from genjipk_sdk.utilities.types import OverwatchCode
+from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Controller, Request, get, patch, post, put
 from litestar.datastructures import State
 from litestar.di import Provide
@@ -91,7 +92,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         data: CompletionCreateDTO,
-    ) -> int:
+    ) -> SubmitCompletionReturnDTO:
         """Submit a new completion.
 
         Args:
@@ -185,7 +186,7 @@ class CompletionsController(Controller):
         request: Request,
         record_id: int,
         data: CompletionVerificationPutDTO,
-    ) -> None:
+    ) -> JobStatus:
         """Verify or reject a completion.
 
         Args:
@@ -206,7 +207,7 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         code: str,
-        page_size: Literal[10, 20, 25, 50] = 10,
+        page_size: Literal[10, 20, 25, 50, 0] = 10,
         page_number: int = 1,
     ) -> list[CompletionReadDTO]:
         """Get the leaderboard for a map.
@@ -276,7 +277,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         data: UpvoteCreateDTO,
-    ) -> int:
+    ) -> UpvoteSubmissionReturnDTO:
         """Upvote a completion submission.
 
         Args:
@@ -290,7 +291,7 @@ class CompletionsController(Controller):
         """
         return await svc.upvote_submission(request, data)
 
-    @post(
+    @get(
         path="/all",
         summary="Get All Completions",
         description="Get all completions that are verified sorted by most recent.",
@@ -314,7 +315,7 @@ class CompletionsController(Controller):
         """
         return await svc.get_all_completions(page_size, page_number)
 
-    @get(path="/wr-xp-check", include_in_schema=False)
+    @get(path="/{code:str}/wr-xp-check", include_in_schema=False)
     async def check_for_previous_world_record_xp(
         self,
         svc: CompletionsService,
@@ -344,6 +345,7 @@ class CompletionsController(Controller):
         page_number: int = 1,
         page_size: Literal[10, 20, 25, 50] = 10,
     ) -> list[CompletionReadDTO]:
+        """Get the legacy completions for a map code."""
         return await svc.get_legacy_completions_per_map(code, page_number, page_size)
 
     @post(
@@ -357,4 +359,9 @@ class CompletionsController(Controller):
         code: OverwatchCode,
         data: QualityUpdateDTO,
     ) -> None:
+        """Set the quality vote for a map code for a user."""
         return await svc.set_quality_vote_for_map_code(code, data.user_id, data.quality)
+
+    @get(path="/upvoting/{message_id:int}")
+    async def get_upvotes_from_message_id(self, svc: CompletionsService, message_id: int) -> int:
+        return await svc.get_upvotes_from_message_id(message_id)
