@@ -40,10 +40,12 @@ class NewsfeedService(BaseService):
         q = "INSERT INTO newsfeed (timestamp, payload) VALUES ($1, $2::jsonb) RETURNING id;"
         payload_obj = msgspec.to_builtins(event.payload)
         new_id = await self._conn.fetchval(q, event.timestamp, payload_obj)
+        idempotency_key = f"newsfeed:create:{new_id}"
         job_status = await self.publish_message(
             routing_key="api.newsfeed.create",
             data=NewsfeedQueueMessage(newsfeed_id=new_id),
             headers=headers,
+            idempotency_key=idempotency_key,
         )
         return CreatePublishNewsfeedReturnDTO(job_status, new_id)
 

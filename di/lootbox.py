@@ -480,7 +480,11 @@ class LootboxService(BaseService):
             previous_amount=result.previous_amount,
             new_amount=result.new_amount,
         )
-        await self.publish_message(routing_key="api.xp.grant", data=message, headers=headers)
+        await self.publish_message(
+            routing_key="api.xp.grant",
+            data=message,
+            headers=headers,
+        )
         return result
 
     async def get_xp_tier_change(self, old_xp: int, new_xp: int) -> TierChange:

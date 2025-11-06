@@ -272,10 +272,12 @@ class PlaytestService(BaseService):
             verifier_id=verifier_id,
             primary_creator_id=primary_creator_id,
         )
+        idempotency_key = f"playtest:approve:{thread_id}"
         return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.approve",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
     async def force_accept(
@@ -320,10 +322,12 @@ class PlaytestService(BaseService):
             difficulty=difficulty,
             verifier_id=verifier_id,
         )
+        idempotency_key = f"playtest:force_accept:{thread_id}"
         return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.force_accept",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
     async def force_deny(
@@ -364,10 +368,12 @@ class PlaytestService(BaseService):
             verifier_id=verifier_id,
             reason=reason,
         )
+        idempotency_key = f"playtest:force_deny:{thread_id}"
         return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.force_deny",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
     async def reset(  # noqa: PLR0913
@@ -407,10 +413,12 @@ class PlaytestService(BaseService):
             remove_votes=remove_votes,
             remove_completions=remove_completions,
         )
+        idempotency_key = f"playtest:reset:{thread_id}"
         return await self.publish_message(
             headers=request.headers,
             routing_key="api.playtest.reset",
             data=payload,
+            idempotency_key=idempotency_key,
         )
 
 

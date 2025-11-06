@@ -17,6 +17,14 @@ class RabbitMessageBody(msgspec.Struct):
     data: typing.Any
 
 
+IGNORE_IDEMPOTENCY = {
+    "api.completion.upvote",
+    "api.playtest.vote.cast",
+    "api.playtest.vote.remove",
+    "api.xp.grant",
+}
+
+
 class BaseService:
     def __init__(self, conn: Connection, state: State) -> None:
         """Initialize a BaseService.
@@ -35,6 +43,7 @@ class BaseService:
         routing_key: str,
         data: msgspec.Struct | list[msgspec.Struct],
         headers: Headers,
+        idempotency_key: str | None = None,
     ) -> JobStatus:
         """Publish a message to RabbitMQ.
 
@@ -44,6 +53,8 @@ class BaseService:
             headers (dict, optional): Headers.
             correlation_id (UUID): A job id.
         """
+        if routing_key not in IGNORE_IDEMPOTENCY and not idempotency_key:
+            raise ValueError(f"idempotency_key required for routing_key='{routing_key}'")
         message_body = msgspec.json.encode(data)
 
         if headers.get("X-PYTEST-ENABLED") == "1":
@@ -66,6 +77,7 @@ class BaseService:
                 message = aio_pika.Message(
                     message_body,
                     correlation_id=str(job_id),
+                    message_id=idempotency_key or str(job_id),
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                     headers=headers.dict(),  # pyright: ignore[reportArgumentType]
                 )

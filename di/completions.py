@@ -246,10 +246,12 @@ class CompletionsService(BaseService):
         except asyncpg.exceptions.CheckViolationError as e:
             raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail or "")
 
+        idempotency_key = f"completion:submission:{data.user_id}:{res}"
         job_status = await self.publish_message(
             routing_key="api.completion.submission",
             data=MessageQueueCompletionsCreate(res),
             headers=request.headers,
+            idempotency_key=idempotency_key,
         )
 
         return SubmitCompletionReturnDTO(job_status, res)
@@ -520,10 +522,12 @@ class CompletionsService(BaseService):
             verified_by=data.verified_by,
             reason=data.reason,
         )
+        idempotency_key = f"completion:verify:{record_id}"
         job_status = await self.publish_message(
             routing_key="api.completion.verification",
             data=message_data,
             headers=request.headers,
+            idempotency_key=idempotency_key,
         )
         return job_status
 
@@ -1092,7 +1096,9 @@ class CompletionsService(BaseService):
                 data.message_id,
             )
             job_status = await self.publish_message(
-                routing_key="api.completion.upvote", data=messsage_data, headers=request.headers
+                routing_key="api.completion.upvote",
+                data=messsage_data,
+                headers=request.headers,
             )
         return UpvoteSubmissionReturnDTO(job_status, count)
 

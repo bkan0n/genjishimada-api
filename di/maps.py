@@ -721,8 +721,12 @@ class MapService(BaseService):
                 metadata = PlaytestCreatePartialDTO(data.code, data.difficulty)
                 playtest_id = await self.create_playtest_meta_partial(metadata)
                 message_data = MessageQueueCreatePlaytest(data.code, playtest_id)
+                idempotency_key = f"map:submit:{map_id}"
                 job_status = await self.publish_message(
-                    routing_key="api.playtest.create", data=message_data, headers=request.headers
+                    routing_key="api.playtest.create",
+                    data=message_data,
+                    headers=request.headers,
+                    idempotency_key=idempotency_key,
                 )
 
         map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))

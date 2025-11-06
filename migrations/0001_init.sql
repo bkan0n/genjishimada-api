@@ -1032,4 +1032,10 @@ create unique index tags_uniq_idx
     on public.tags (lower(name), location_id);
 
 
+CREATE TABLE IF NOT EXISTS public.processed_messages (
+    idempotency_key text PRIMARY KEY,
+    processed_at timestamptz NOT NULL DEFAULT now()
+);
+
+
 COMMIT;
