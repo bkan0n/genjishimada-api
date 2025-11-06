@@ -764,6 +764,7 @@ class MapService(BaseService):
         data: PlaytestCreatePartialDTO,
         request: Request,
     ) -> JobStatus:
+        """Send a map back to playtest."""
         map_id = await self._lookup_id(data.code)
         current_map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
         if current_map_data.playtesting == "In Progress":
@@ -849,7 +850,7 @@ class MapService(BaseService):
             code=row["code"],
             map_name=row["map_name"],
             checkpoints=row["checkpoints"],
-            difficulty=row["difficulty"],
+            difficulty=convert_raw_difficulty_to_difficulty_all(row["difficulty"]),
             creator_name=row["creator_names"][0],
         )
 
