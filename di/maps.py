@@ -930,7 +930,9 @@ class MapService(BaseService):
                     )
                     SELECT initial_difficulty AS difficulty, 1 AS amount
                     FROM playtests.meta
-                    WHERE map_id = (SELECT id FROM target_map);
+                    WHERE map_id = (SELECT id FROM target_map) AND completed=FALSE
+                    ORDER BY created_at DESC
+                    LIMIT 1;
                 """,
                 code,
             )
