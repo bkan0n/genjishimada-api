@@ -3,7 +3,7 @@ import uuid
 from asyncpg import Connection
 from genjipk_sdk.models import JobStatus, JobUpdate
 from genjipk_sdk.models.jobs import ClaimRequest, ClaimResponse
-from litestar import Controller, get, patch, post
+from litestar import Controller, delete, get, patch, post
 from litestar.di import Provide
 
 from di.jobs import InternalJobsService, provide_internal_jobs_service
@@ -30,9 +30,19 @@ class InternalJobsController(Controller):
             """
             INSERT INTO public.processed_messages (idempotency_key)
             VALUES ($1)
-            ON CONFLICT DO NOTHING
+            ON CONFLICT DO NOTHING;
             """,
             data.key,
         )
         claimed = tag.endswith("INSERT 0 1")
         return ClaimResponse(claimed=claimed)
+
+    @delete("/idempotency/claim")
+    async def delete_claimed_idempotency(self, conn: Connection, data: ClaimRequest) -> None:
+        await conn.execute(
+            """
+            DELETE FROM public.processed_messages
+            WHERE idempotency_key = $1;
+            """,
+            data.key,
+        )
