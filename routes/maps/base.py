@@ -29,8 +29,8 @@ from genjipk_sdk.models import (
     NewsfeedMapEdit,
     NewsfeedNewMap,
     NewsfeedUnarchive,
-    PlaytestCreatePartialDTO,
     QualityValueDTO,
+    SendToPlaytestDTO,
     TrendingMapReadDTO,
 )
 from genjipk_sdk.models.jobs import CreateMapReturnDTO
@@ -907,8 +907,9 @@ class BaseMapsController(litestar.Controller):
     async def send_map_to_playtest(
         self,
         request: litestar.Request,
+        code: OverwatchCode,
         svc: MapService,
-        data: PlaytestCreatePartialDTO,
+        data: SendToPlaytestDTO,
     ) -> JobStatus:
         """Send a map back to playtest."""
-        return await svc.send_map_to_playtest(data=data, request=request)
+        return await svc.send_map_to_playtest(code=code, data=data, request=request)

@@ -23,6 +23,7 @@ from genjipk_sdk.models import (
     MessageQueueCreatePlaytest,
     PlaytestCreatePartialDTO,
     QualityValueDTO,
+    SendToPlaytestDTO,
     TrendingMapReadDTO,
 )
 from genjipk_sdk.models.jobs import CreateMapReturnDTO
@@ -761,19 +762,21 @@ class MapService(BaseService):
     async def send_map_to_playtest(
         self,
         *,
-        data: PlaytestCreatePartialDTO,
+        code: OverwatchCode,
+        data: SendToPlaytestDTO,
         request: Request,
     ) -> JobStatus:
         """Send a map back to playtest."""
-        map_id = await self._lookup_id(data.code)
-        current_map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+        map_id = await self._lookup_id(code)
+        current_map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=code))
         if current_map_data.playtesting == "In Progress":
             raise CustomHTTPException(detail="Map is already in playtest", status_code=HTTP_400_BAD_REQUEST)
         async with self._conn.transaction():
-            await self.convert_map_to_legacy(data.code)
-            await self.patch_map(data.code, MapPatchDTO(playtesting="In Progress"))
-            playtest_id = await self.create_playtest_meta_partial(data)
-        message_data = MessageQueueCreatePlaytest(data.code, playtest_id)
+            await self.convert_map_to_legacy(code)
+            await self.patch_map(code, MapPatchDTO(playtesting="In Progress"))
+            payload = PlaytestCreatePartialDTO(code, data.initial_difficulty)
+            playtest_id = await self.create_playtest_meta_partial(payload)
+        message_data = MessageQueueCreatePlaytest(code, playtest_id)
         idempotency_key = f"map:send-to-playtest:{map_id}:{playtest_id}"
         job_status = await self.publish_message(
             routing_key="api.playtest.create",
