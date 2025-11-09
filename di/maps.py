@@ -11,6 +11,7 @@ from genjipk_sdk.models import (
     Creator,
     Guide,
     GuideFull,
+    JobStatus,
     MapCreateDTO,
     MapMasteryCreateDTO,
     MapMasteryCreateReturnDTO,
@@ -22,6 +23,7 @@ from genjipk_sdk.models import (
     MessageQueueCreatePlaytest,
     PlaytestCreatePartialDTO,
     QualityValueDTO,
+    SendToPlaytestDTO,
     TrendingMapReadDTO,
 )
 from genjipk_sdk.models.jobs import CreateMapReturnDTO
@@ -757,6 +759,33 @@ class MapService(BaseService):
             final_code = data.code if data.code is not msgspec.UNSET else code
             return await self.fetch_maps(single=True, filters=MapSearchFilters(code=final_code))
 
+    async def send_map_to_playtest(
+        self,
+        *,
+        code: OverwatchCode,
+        data: SendToPlaytestDTO,
+        request: Request,
+    ) -> JobStatus:
+        """Send a map back to playtest."""
+        map_id = await self._lookup_id(code)
+        current_map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=code))
+        if current_map_data.playtesting == "In Progress":
+            raise CustomHTTPException(detail="Map is already in playtest", status_code=HTTP_400_BAD_REQUEST)
+        async with self._conn.transaction():
+            await self.convert_map_to_legacy(code)
+            await self.patch_map(code, MapPatchDTO(playtesting="In Progress"))
+            payload = PlaytestCreatePartialDTO(code, data.initial_difficulty)
+            playtest_id = await self.create_playtest_meta_partial(payload)
+        message_data = MessageQueueCreatePlaytest(code, playtest_id)
+        idempotency_key = f"map:send-to-playtest:{map_id}:{playtest_id}"
+        job_status = await self.publish_message(
+            routing_key="api.playtest.create",
+            data=message_data,
+            headers=request.headers,
+            idempotency_key=idempotency_key,
+        )
+        return job_status
+
     async def create_playtest_meta_partial(self, data: PlaytestCreatePartialDTO) -> int:
         """Create Playtest Meta Partial.
 
@@ -801,17 +830,18 @@ class MapService(BaseService):
                 m.code,
                 m.map_name,
                 m.checkpoints,
-                m.difficulty,
+                pm.initial_difficulty AS difficulty,
                 array_agg(DISTINCT u.nickname) AS creator_names
             FROM core.maps AS m
             LEFT JOIN maps.creators AS c ON c.map_id = m.id AND c.is_primary
             LEFT JOIN core.users AS u ON c.user_id = u.id
+            LEFT JOIN playtests.meta AS pm ON m.id = pm.map_id
             WHERE m.id = $1
             GROUP BY m.id,
                 m.code,
                 m.map_name,
                 m.checkpoints,
-                m.difficulty,
+                pm.initial_difficulty,
                 u.id;
 
         """
@@ -823,7 +853,7 @@ class MapService(BaseService):
             code=row["code"],
             map_name=row["map_name"],
             checkpoints=row["checkpoints"],
-            difficulty=row["difficulty"],
+            difficulty=convert_raw_difficulty_to_difficulty_all(row["difficulty"]),
             creator_name=row["creator_names"][0],
         )
 
@@ -903,7 +933,9 @@ class MapService(BaseService):
                     )
                     SELECT initial_difficulty AS difficulty, 1 AS amount
                     FROM playtests.meta
-                    WHERE map_id = (SELECT id FROM target_map);
+                    WHERE map_id = (SELECT id FROM target_map) AND completed=FALSE
+                    ORDER BY created_at DESC
+                    LIMIT 1;
                 """,
                 code,
             )
@@ -1506,7 +1538,9 @@ class MapService(BaseService):
             ValueError: If any pending verifications exist.
         """
         if await self._check_if_any_pending_verifications(code):
-            raise ValueError("Pending verifications exist for this map code.")
+            raise CustomHTTPException(
+                detail="Pending verifications exist for this map code.", status_code=HTTP_400_BAD_REQUEST
+            )
         async with self._conn.transaction():
             await self._remove_map_medal_entries(code)
             return await self._convert_completions_to_legacy(code)
