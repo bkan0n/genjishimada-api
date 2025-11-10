@@ -4,7 +4,9 @@ import inspect
 import re
 from logging import getLogger
 from typing import Any, Awaitable, Callable, Iterable, Literal
+from uuid import UUID
 
+import asyncpg
 import litestar
 import msgspec
 from asyncpg import Connection
@@ -47,7 +49,7 @@ from genjipk_sdk.utilities._types import (
     PlaytestStatus,
     Restrictions,
 )
-from litestar.datastructures import Headers
+from litestar.datastructures import Headers, State
 from litestar.di import Provide
 from litestar.response import Response, Stream
 from litestar.status_codes import HTTP_200_OK, HTTP_400_BAD_REQUEST
@@ -929,6 +931,7 @@ class BaseMapsController(litestar.Controller):
     )
     async def link_map_codes(
         self,
+        state: State,
         request: litestar.Request,
         svc: MapService,
         newsfeed: NewsfeedService,
@@ -969,8 +972,7 @@ class BaseMapsController(litestar.Controller):
             assert status
             task = asyncio.create_task(
                 wait_and_publish_newsfeed(
-                    svc=svc,
-                    jobs=jobs,
+                    pool=state.db_pool,
                     newsfeed=newsfeed,
                     status=status,
                     event=event,
@@ -986,20 +988,20 @@ class BaseMapsController(litestar.Controller):
         return status
 
 
-async def wait_and_publish_newsfeed(  # noqa: PLR0913
+async def wait_and_publish_newsfeed(
     *,
-    svc: MapService,
-    jobs: InternalJobsService,
+    pool: asyncpg.Pool,
     newsfeed: NewsfeedService,
     status: JobStatus,
     event: NewsfeedEvent,
     headers: Headers,
 ) -> None:
-    """Wait for a job to complete, then publish a newsfeed event.
+    """Wait for a job to complete using the pool, then publish a newsfeed event.
+
+    This function avoids request-scoped connections by using the app-scoped asyncpg Pool.
 
     Args:
-        svc (MapService): Service responsible for map management and linking logic.
-        jobs (InternalJobsService): Service providing `get_job` for polling.
+        pool (asyncpg.Pool): App-scoped connection pool for all DB access.
         newsfeed (NewsfeedService): Service used to publish the newsfeed event.
         status (JobStatus): The initial job status returned from the map service.
         event (NewsfeedEvent): The event to publish once the job finishes.
@@ -1008,18 +1010,47 @@ async def wait_and_publish_newsfeed(  # noqa: PLR0913
     Returns:
         None
     """
+
+    async def _fetch_status(job_id: UUID) -> JobStatus | None:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, status, error_code, error_msg FROM core.jobs WHERE id = $1;",
+                job_id,
+            )
+            if not row:
+                return None
+            return JobStatus(
+                id=row["id"],
+                status=row["status"],
+                error_code=row["error_code"],
+                error_msg=row["error_msg"],
+            )
+
     try:
         final_status = await wait_for_job_completion(
             job_id=status.id,
-            fetch_status=jobs.get_job,  # same signature as before
+            fetch_status=_fetch_status,
             timeout=90.0,
         )
 
         if final_status.status == "succeeded":
+            # Fill in playtest_id from DB (based on official_code) before publishing.
             assert isinstance(event.payload, NewsfeedLinkedMap)
-            map_data = await svc.fetch_maps(single=True, filters=MapSearchFilters(code=event.payload.official_code))
-            assert map_data.playtest
-            event.payload.playtest_id = map_data.playtest.thread_id
+
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT pm.thread_id
+                    FROM core.maps m
+                    JOIN playtests.meta pm ON pm.map_id = m.id
+                    WHERE m.code = $1
+                    """,
+                    event.payload.official_code,
+                )
+
+            if row and row["thread_id"] is not None:
+                event.payload.playtest_id = row["thread_id"]
+
             await newsfeed.create_and_publish(event, headers=headers)
         else:
             log.warning(
