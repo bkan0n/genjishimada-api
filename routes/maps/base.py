@@ -54,7 +54,7 @@ from litestar.di import Provide
 from litestar.response import Response, Stream
 from litestar.status_codes import HTTP_200_OK, HTTP_400_BAD_REQUEST
 
-from di.jobs import InternalJobsService, provide_internal_jobs_service
+from di.jobs import provide_internal_jobs_service
 from di.maps import CompletionFilter, MapSearchFilters, MapService, MedalFilter, provide_map_service
 from di.newsfeed import NewsfeedService, provide_newsfeed_service
 from di.users import UserService, provide_user_service
@@ -935,7 +935,6 @@ class BaseMapsController(litestar.Controller):
         request: litestar.Request,
         svc: MapService,
         newsfeed: NewsfeedService,
-        jobs: InternalJobsService,
         data: LinkMapsCreateDTO,
     ) -> JobStatus | None:
         """Link an official and unofficial map and publish a newsfeed event.
@@ -1014,7 +1013,7 @@ async def wait_and_publish_newsfeed(
     async def _fetch_status(job_id: UUID) -> JobStatus | None:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, status, error_code, error_msg FROM core.jobs WHERE id = $1;",
+                "SELECT id, status, error_code, error_msg FROM public.jobs WHERE id = $1;",
                 job_id,
             )
             if not row:
