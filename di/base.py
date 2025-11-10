@@ -35,6 +35,7 @@ class BaseService:
 
         """
         self._conn = conn
+        self._pool = state.db_pool
         self._state = state
 
     async def publish_message(
@@ -44,6 +45,7 @@ class BaseService:
         data: msgspec.Struct | list[msgspec.Struct],
         headers: Headers,
         idempotency_key: str | None = None,
+        use_pool: bool = False,
     ) -> JobStatus:
         """Publish a message to RabbitMQ.
 
@@ -52,6 +54,7 @@ class BaseService:
             routing_key (str, optional): The RabbitMQ message routing key.
             headers (dict, optional): Headers.
             correlation_id (UUID): A job id.
+            use_pool (bool): Whether or not to use a pool for the connection.
         """
         if routing_key not in IGNORE_IDEMPOTENCY and not idempotency_key:
             raise ValueError(f"idempotency_key required for routing_key='{routing_key}'")
@@ -69,11 +72,19 @@ class BaseService:
         async with self._state.mq_channel_pool.acquire() as channel:
             try:
                 job_id = uuid.uuid4()
-                await self._conn.execute(
-                    "INSERT INTO public.jobs (id, action) VALUES ($1, $2);",
-                    job_id,
-                    routing_key,
-                )
+                if use_pool:
+                    async with self._pool.aquire() as conn:
+                        await conn.execute(
+                            "INSERT INTO public.jobs (id, action) VALUES ($1, $2);",
+                            job_id,
+                            routing_key,
+                        )
+                else:
+                    await self._conn.execute(
+                        "INSERT INTO public.jobs (id, action) VALUES ($1, $2);",
+                        job_id,
+                        routing_key,
+                    )
                 message = aio_pika.Message(
                     message_body,
                     correlation_id=str(job_id),

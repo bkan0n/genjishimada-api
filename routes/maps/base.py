@@ -1,3 +1,4 @@
+import asyncio
 import datetime as dt
 import inspect
 import re
@@ -966,14 +967,18 @@ class BaseMapsController(litestar.Controller):
 
         if in_playtest:
             assert status
-            await wait_and_publish_newsfeed(
-                svc=svc,
-                jobs=jobs,
-                newsfeed=newsfeed,
-                status=status,
-                event=event,
-                headers=request.headers,
+            task = asyncio.create_task(
+                wait_and_publish_newsfeed(
+                    svc=svc,
+                    jobs=jobs,
+                    newsfeed=newsfeed,
+                    status=status,
+                    event=event,
+                    headers=request.headers,
+                )
             )
+            self.linked_code_job_statuses.add(task)
+            task.add_done_callback(lambda t: self.linked_code_job_statuses.remove(t))
 
         else:
             await newsfeed.create_and_publish(event, headers=request.headers)
@@ -1006,13 +1011,15 @@ async def wait_and_publish_newsfeed(  # noqa: PLR0913
     try:
         final_status = await wait_for_job_completion(
             job_id=status.id,
-            fetch_status=jobs.get_job,  # same signature as before
+            fetch_status=jobs.get_job_using_pool,  # same signature as before
             timeout=90.0,
         )
 
         if final_status.status == "succeeded":
             assert isinstance(event.payload, NewsfeedLinkedMap)
-            map_data = await svc.fetch_maps(single=True, filters=MapSearchFilters(code=event.payload.official_code))
+            map_data = await svc.fetch_maps(
+                single=True, filters=MapSearchFilters(code=event.payload.official_code), use_pool=True
+            )
             assert map_data.playtest
             event.payload.playtest_id = map_data.playtest.thread_id
             await newsfeed.create_and_publish(event, headers=headers)

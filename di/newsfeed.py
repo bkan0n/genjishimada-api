@@ -24,7 +24,7 @@ class NewsfeedService(BaseService):
         event: NewsfeedEvent,
         *,
         headers: Headers,
-        custom_conn: Connection | None = None,
+        use_pool: bool = False,
     ) -> CreatePublishNewsfeedReturnDTO:
         """Insert a newsfeed event and publish its ID to Rabbit.
 
@@ -33,6 +33,7 @@ class NewsfeedService(BaseService):
             routing_key (str | None, optional): Override for the publish routing key. Defaults to the service default.
             pytest_enabled (bool, optional): If True, publish using test mode in the publisher. Defaults to False.
             headers (dict | None, optional): Additional headers to include in the published message.
+            use_pool (bool): Whether or not to use a pool for the connection.
 
         Returns:
             int: The newly created newsfeed event ID.
@@ -40,14 +41,18 @@ class NewsfeedService(BaseService):
         """
         q = "INSERT INTO newsfeed (timestamp, payload) VALUES ($1, $2::jsonb) RETURNING id;"
         payload_obj = msgspec.to_builtins(event.payload)
-        connection = custom_conn if custom_conn else self._conn
-        new_id = await connection.fetchval(q, event.timestamp, payload_obj)
+        if use_pool:
+            async with self._pool.acquire() as conn:
+                new_id = await conn.fetchval(q, event.timestamp, payload_obj)
+        else:
+            new_id = await self._conn.fetchval(q, event.timestamp, payload_obj)
         idempotency_key = f"newsfeed:create:{new_id}"
         job_status = await self.publish_message(
             routing_key="api.newsfeed.create",
             data=NewsfeedQueueMessage(newsfeed_id=new_id),
             headers=headers,
             idempotency_key=idempotency_key,
+            use_pool=use_pool,
         )
         return CreatePublishNewsfeedReturnDTO(job_status, new_id)
 

@@ -861,21 +861,17 @@ class MapService(BaseService):
 
     @overload
     async def fetch_maps(
-        self,
-        *,
-        single: Literal[True],
-        filters: MapSearchFilters,
+        self, *, single: Literal[True], filters: MapSearchFilters, use_pool: bool = False
     ) -> MapReadDTO: ...
 
     @overload
     async def fetch_maps(
-        self,
-        *,
-        single: Literal[False],
-        filters: MapSearchFilters,
+        self, *, single: Literal[False], filters: MapSearchFilters, use_pool: bool = False
     ) -> list[MapReadDTO]: ...
 
-    async def fetch_maps(self, *, single: bool, filters: MapSearchFilters) -> list[MapReadDTO] | MapReadDTO | None:
+    async def fetch_maps(
+        self, *, single: bool, filters: MapSearchFilters, use_pool: bool = False
+    ) -> list[MapReadDTO] | MapReadDTO | None:
         """Fetch maps from the database with any filter.
 
         Builds SQL with `MapSearchSQLBuilder`, executes it, converts rows to `MapReadDTO`,
@@ -884,6 +880,7 @@ class MapService(BaseService):
         Args:
             single (bool): If True, return the first result only.
             filters (MapSearchFilters): All supported search filters and pagination.
+            use_pool (bool): Whether or not to use a pool for the connection.
 
         Returns:
             list[MapReadDTO] | MapReadDTO | None: Matching maps (or first map when `single=True`).
@@ -891,7 +888,11 @@ class MapService(BaseService):
         """
         builder = MapSearchSQLBuilder(filters)
         query, args = builder.build()
-        rows = await self._conn.fetch(query, *args)
+        if use_pool:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+        else:
+            rows = await self._conn.fetch(query, *args)
         _models = msgspec.convert(rows, list[MapReadDTO])
         if not _models:
             return _models
