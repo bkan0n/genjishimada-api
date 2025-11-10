@@ -1935,7 +1935,7 @@ class MapService(BaseService):
         official_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=official_code))
         unofficial_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=unofficial_code))
 
-        if not (official_map and unofficial_map):
+        if not official_map and not unofficial_map:
             raise CustomHTTPException(
                 detail="You must have submit with at least one of official_code or unofficial_code.",
                 status_code=HTTP_400_BAD_REQUEST,
