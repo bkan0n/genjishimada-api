@@ -1897,7 +1897,7 @@ class MapService(BaseService):
             checkpoints=map_data.checkpoints,
             difficulty=map_data.difficulty,
             official=is_official,
-            hidden=True,
+            hidden=is_official,
             playtesting="In Progress" if is_official else "Approved",
             archived=False,
             mechanics=map_data.mechanics,
