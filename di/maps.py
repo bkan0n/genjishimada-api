@@ -1953,14 +1953,16 @@ class MapService(BaseService):
         needs_link_only = official_map and unofficial_map
 
         if needs_clone_only:
+            log.debug("needs clone only is TRUE")
             payload = self._create_cloned_map_data_payload(
-                map_data=official_map, code=unofficial_code, is_official=True
+                map_data=official_map, code=unofficial_code, is_official=False
             )
             res = await self.create_map(payload, request)
             await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
             return res.job_status, False
 
         if needs_clone_and_playtest:
+            log.debug("needs clone AND playtest is TRUE")
             payload = self._create_cloned_map_data_payload(
                 map_data=unofficial_map, code=official_code, is_official=True
             )
@@ -1969,6 +1971,7 @@ class MapService(BaseService):
             return res.job_status, True
 
         if needs_link_only:
+            log.debug("needs link only is TRUE")
             await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
             return None, False
 
