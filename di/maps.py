@@ -712,6 +712,8 @@ class MapService(BaseService):
 
         """
         async with self._conn.transaction():
+            if not data.official and data.playtesting != "Approved":
+                data.playtesting = "Approved"
             map_id = await self._insert_core_map_data(data)
             await self._insert_creators(map_id, data.creators, remove_existing=False)
             await self._insert_guide(map_id, data.guide_url, data.primary_creator_id)
@@ -1842,6 +1844,124 @@ class MapService(BaseService):
             limit,
         )
         return msgspec.convert(rows, list[TrendingMapReadDTO])
+
+    async def _link_two_map_codes(
+        self,
+        *,
+        code_1: OverwatchCode,
+        code_2: OverwatchCode,
+    ) -> None:
+        """Establish a bidirectional link between two map codes.
+
+        Updates both map records so that each one's `linked_code` field references
+        the other, ensuring a symmetrical relationship in the database.
+
+        Args:
+            code_1 (OverwatchCode): The first map code to link.
+            code_2 (OverwatchCode): The second map code to link.
+
+        """
+        query = "UPDATE core.maps SET linked_code=$2 WHERE code=$1;"
+        async with self._conn.transaction():
+            await self._conn.execute(query, code_1, code_2)
+            await self._conn.execute(query, code_2, code_1)
+
+    def _create_cloned_map_data_payload(self, *, map_data: MapReadDTO, code: OverwatchCode) -> MapCreateDTO:
+        """Create a map creation payload by cloning an existing map.
+
+        Generates a `MapCreateDTO` from an existing `MapReadDTO`, preserving all
+        core fields such as creators, category, mechanics, and medals, while assigning
+        a new map code. The clone is marked as hidden, unofficial, and playtesting-approved.
+
+        Args:
+            map_data (MapReadDTO): The source map data to clone.
+            code (OverwatchCode): The new map code to assign to the cloned map.
+
+        Returns:
+            MapCreateDTO: The fully prepared DTO for creating the cloned map.
+        """
+        creators = [Creator(c.id, c.is_primary) for c in map_data.creators]
+        guide_url = map_data.guides[0] if map_data.guides else ""
+        create_map_payload = MapCreateDTO(
+            code=code,
+            map_name=map_data.map_name,
+            category=map_data.category,
+            creators=creators,
+            checkpoints=map_data.checkpoints,
+            difficulty=map_data.difficulty,
+            official=False,
+            hidden=True,
+            playtesting="Approved",
+            archived=False,
+            mechanics=map_data.mechanics,
+            restrictions=map_data.restrictions,
+            description=map_data.description,
+            medals=map_data.medals,
+            guide_url=guide_url,
+            title=map_data.title,
+            custom_banner=map_data.map_banner,
+        )
+        return create_map_payload
+
+    async def link_official_and_unofficial_map(
+        self,
+        *,
+        request: Request,
+        official_code: OverwatchCode,
+        unofficial_code: OverwatchCode,
+    ) -> tuple[JobStatus | None, bool]:
+        """Link an official and unofficial map, cloning as needed.
+
+        Determines which maps exist and performs the appropriate operation:
+        - Clone the official map if only it exists.
+        - Clone the unofficial map and initiate playtesting if only it exists.
+        - Link both directly if both exist.
+
+        Args:
+            request (Request): The active HTTP request context.
+            official_code (OverwatchCode): The official map code.
+            unofficial_code (OverwatchCode): The unofficial map code.
+
+        Returns:
+            A tuple where the first item is:
+                JobStatus | None: The resulting job status if a clone or playtest was created;
+                    otherwise `None` when only a link operation was performed.
+            The second item is:
+                in_playtest: bool
+
+        Raises:
+            CustomHTTPException: If neither an official nor an unofficial map is provided.
+        """
+        official_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=official_code))
+        unofficial_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=unofficial_code))
+
+        if not (official_map and unofficial_map):
+            raise CustomHTTPException(
+                detail="You must have submit with at least one of official_code or unofficial_code.",
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        needs_clone_only = official_map and not unofficial_map
+        needs_clone_and_playtest = not official_map and unofficial_map
+        needs_link_only = official_map and unofficial_map
+
+        if needs_clone_only:
+            payload = self._create_cloned_map_data_payload(map_data=official_map, code=unofficial_code)
+            res = await self.create_map(payload, request)
+            await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
+            return res.job_status, False
+
+        if needs_clone_and_playtest:
+            payload = self._create_cloned_map_data_payload(map_data=unofficial_map, code=official_code)
+            res = await self.create_map(payload, request)
+            await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
+            return res.job_status, True
+
+        if needs_link_only:
+            await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
+            return None, False
+
+        return None, False
 
 
 async def provide_map_service(conn: Connection, state: State) -> MapService:
