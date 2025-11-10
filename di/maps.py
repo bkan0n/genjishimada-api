@@ -1,3 +1,4 @@
+import datetime as dt
 import functools
 import itertools
 from logging import getLogger
@@ -21,6 +22,8 @@ from genjipk_sdk.models import (
     MapReadPartialDTO,
     Medals,
     MessageQueueCreatePlaytest,
+    NewsfeedEvent,
+    NewsfeedNewMap,
     PlaytestCreatePartialDTO,
     QualityValueDTO,
     SendToPlaytestDTO,
@@ -51,6 +54,7 @@ from litestar.response import Stream
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
 from di.base import BaseService
+from di.newsfeed import NewsfeedService
 from utilities.errors import CustomHTTPException, parse_pg_detail
 from utilities.playtest_plot import build_playtest_plot
 from utilities.shared_queries import get_map_mastery_data
@@ -696,7 +700,12 @@ def _handle_exceptions(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable
 
 class MapService(BaseService):
     @_handle_exceptions
-    async def create_map(self, data: MapCreateDTO, request: Request) -> CreateMapReturnDTO:
+    async def create_map(
+        self,
+        data: MapCreateDTO,
+        request: Request,
+        newsfeed_service: NewsfeedService,
+    ) -> CreateMapReturnDTO:
         """Create a map.
 
         Within a transaction, inserts the core map row and all related data (creators, guide,
@@ -706,6 +715,7 @@ class MapService(BaseService):
         Args:
             data (MapCreateDTO): Map creation payload.
             request (Request): Request.
+            newsfeed_service (NewsfeedService): Manages newsfeed events
 
         Returns:
             MapReadDTO: The created map.
@@ -734,6 +744,26 @@ class MapService(BaseService):
                 )
 
         map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+
+        if data.playtesting == "Approved" and newsfeed_service:
+            event_payload = NewsfeedNewMap(
+                code=map_data.code,
+                map_name=map_data.map_name,
+                difficulty=map_data.difficulty,
+                creators=[x.name for x in map_data.creators],
+                banner_url=map_data.map_banner,
+                official=data.official,
+                title=data.title,
+            )
+
+            event = NewsfeedEvent(
+                id=None,
+                timestamp=dt.datetime.now(dt.timezone.utc),
+                payload=event_payload,
+                event_type="new_map",
+            )
+            await newsfeed_service.create_and_publish(event, headers=request.headers, use_pool=True)
+
         return CreateMapReturnDTO(job_status, map_data)
 
     @_handle_exceptions
@@ -1916,6 +1946,7 @@ class MapService(BaseService):
         request: Request,
         official_code: OverwatchCode,
         unofficial_code: OverwatchCode,
+        newsfeed: NewsfeedService,
     ) -> tuple[JobStatus | None, bool]:
         """Link an official and unofficial map, cloning as needed.
 
@@ -1928,6 +1959,7 @@ class MapService(BaseService):
             request (Request): The active HTTP request context.
             official_code (OverwatchCode): The official map code.
             unofficial_code (OverwatchCode): The unofficial map code.
+            newsfeed (NewsfeedService): Manages newsfeed events.
 
         Returns:
             A tuple where the first item is:
@@ -1957,7 +1989,7 @@ class MapService(BaseService):
             payload = self._create_cloned_map_data_payload(
                 map_data=official_map, code=unofficial_code, is_official=False
             )
-            res = await self.create_map(payload, request)
+            res = await self.create_map(payload, request, newsfeed)
             await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
             return res.job_status, False
 
@@ -1966,7 +1998,7 @@ class MapService(BaseService):
             payload = self._create_cloned_map_data_payload(
                 map_data=unofficial_map, code=official_code, is_official=True
             )
-            res = await self.create_map(payload, request)
+            res = await self.create_map(payload, request, newsfeed)
             await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
             return res.job_status, True
 

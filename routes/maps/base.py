@@ -29,7 +29,6 @@ from genjipk_sdk.models import (
     NewsfeedLegacyRecord,
     NewsfeedLinkedMap,
     NewsfeedMapEdit,
-    NewsfeedNewMap,
     NewsfeedUnarchive,
     QualityValueDTO,
     SendToPlaytestDTO,
@@ -412,26 +411,7 @@ class BaseMapsController(litestar.Controller):
             MapReadDTO: Created map.
 
         """
-        _data = await svc.create_map(data, request)
-        if data.playtesting == "Approved":
-            event_payload = NewsfeedNewMap(
-                code=_data.data.code,
-                map_name=_data.data.map_name,
-                difficulty=_data.data.difficulty,
-                creators=[x.name for x in _data.data.creators],
-                banner_url=_data.data.map_banner,
-                official=data.official,
-                title=data.title,
-            )
-
-            event = NewsfeedEvent(
-                id=None,
-                timestamp=dt.datetime.now(dt.timezone.utc),
-                payload=event_payload,
-                event_type="new_map",
-            )
-            await newsfeed.create_and_publish(event, headers=request.headers)
-
+        _data = await svc.create_map(data, request, newsfeed)
         return _data
 
     async def _generate_patch_newsfeed(  # noqa: PLR0913
@@ -956,7 +936,10 @@ class BaseMapsController(litestar.Controller):
             HTTPException: If linking or newsfeed publishing fails.
         """
         status, in_playtest = await svc.link_official_and_unofficial_map(
-            request=request, official_code=data.official_code, unofficial_code=data.unofficial_code
+            request=request,
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+            newsfeed=newsfeed,
         )
 
         payload = NewsfeedLinkedMap(
