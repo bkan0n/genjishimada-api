@@ -1,12 +1,9 @@
-import asyncio
 import datetime as dt
 import inspect
 import re
 from logging import getLogger
 from typing import Any, Awaitable, Callable, Iterable, Literal
-from uuid import UUID
 
-import asyncpg
 import litestar
 import msgspec
 from asyncpg import Connection
@@ -49,12 +46,12 @@ from genjipk_sdk.utilities._types import (
     PlaytestStatus,
     Restrictions,
 )
-from litestar.datastructures import Headers, State
+from litestar.datastructures import Headers
 from litestar.di import Provide
 from litestar.response import Response, Stream
 from litestar.status_codes import HTTP_200_OK, HTTP_400_BAD_REQUEST
 
-from di.jobs import provide_internal_jobs_service
+from di.jobs import InternalJobsService, provide_internal_jobs_service
 from di.maps import CompletionFilter, MapSearchFilters, MapService, MedalFilter, provide_map_service
 from di.newsfeed import NewsfeedService, provide_newsfeed_service
 from di.users import UserService, provide_user_service
@@ -931,10 +928,10 @@ class BaseMapsController(litestar.Controller):
     )
     async def link_map_codes(
         self,
-        state: State,
         request: litestar.Request,
         svc: MapService,
         newsfeed: NewsfeedService,
+        jobs: InternalJobsService,
         data: LinkMapsCreateDTO,
     ) -> JobStatus | None:
         """Link an official and unofficial map and publish a newsfeed event.
@@ -969,17 +966,14 @@ class BaseMapsController(litestar.Controller):
 
         if in_playtest:
             assert status
-            task = asyncio.create_task(
-                wait_and_publish_newsfeed(
-                    pool=state.db_pool,
-                    newsfeed=newsfeed,
-                    status=status,
-                    event=event,
-                    headers=request.headers,
-                )
+            await wait_and_publish_newsfeed(
+                svc=svc,
+                jobs=jobs,
+                newsfeed=newsfeed,
+                status=status,
+                event=event,
+                headers=request.headers,
             )
-            self.linked_code_job_statuses.add(task)
-            task.add_done_callback(lambda t: self.linked_code_job_statuses.remove(t))
 
         else:
             await newsfeed.create_and_publish(event, headers=request.headers)
@@ -987,20 +981,20 @@ class BaseMapsController(litestar.Controller):
         return status
 
 
-async def wait_and_publish_newsfeed(
+async def wait_and_publish_newsfeed(  # noqa: PLR0913
     *,
-    pool: asyncpg.Pool,
+    svc: MapService,
+    jobs: InternalJobsService,
     newsfeed: NewsfeedService,
     status: JobStatus,
     event: NewsfeedEvent,
     headers: Headers,
 ) -> None:
-    """Wait for a job to complete using the pool, then publish a newsfeed event.
-
-    This function avoids request-scoped connections by using the app-scoped asyncpg Pool.
+    """Wait for a job to complete, then publish a newsfeed event.
 
     Args:
-        pool (asyncpg.Pool): App-scoped connection pool for all DB access.
+        svc (MapService): Service responsible for map management and linking logic.
+        jobs (InternalJobsService): Service providing `get_job` for polling.
         newsfeed (NewsfeedService): Service used to publish the newsfeed event.
         status (JobStatus): The initial job status returned from the map service.
         event (NewsfeedEvent): The event to publish once the job finishes.
@@ -1009,48 +1003,19 @@ async def wait_and_publish_newsfeed(
     Returns:
         None
     """
-
-    async def _fetch_status(job_id: UUID) -> JobStatus | None:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id, status, error_code, error_msg FROM public.jobs WHERE id = $1;",
-                job_id,
-            )
-            if not row:
-                return None
-            return JobStatus(
-                id=row["id"],
-                status=row["status"],
-                error_code=row["error_code"],
-                error_msg=row["error_msg"],
-            )
-
     try:
         final_status = await wait_for_job_completion(
             job_id=status.id,
-            fetch_status=_fetch_status,
+            fetch_status=jobs.get_job,  # same signature as before
             timeout=90.0,
         )
 
         if final_status.status == "succeeded":
-            # Fill in playtest_id from DB (based on official_code) before publishing.
             assert isinstance(event.payload, NewsfeedLinkedMap)
-
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT pm.thread_id
-                    FROM core.maps m
-                    JOIN playtests.meta pm ON pm.map_id = m.id
-                    WHERE m.code = $1
-                    """,
-                    event.payload.official_code,
-                )
-
-                if row and row["thread_id"] is not None:
-                    event.payload.playtest_id = row["thread_id"]
-
-                await newsfeed.create_and_publish(event, headers=headers, custom_conn=conn)  # type: ignore
+            map_data = await svc.fetch_maps(single=True, filters=MapSearchFilters(code=event.payload.official_code))
+            assert map_data.playtest
+            event.payload.playtest_id = map_data.playtest.thread_id
+            await newsfeed.create_and_publish(event, headers=headers)
         else:
             log.warning(
                 "Skipping newsfeed publish for job %s (status=%s)",
