@@ -1866,7 +1866,13 @@ class MapService(BaseService):
             await self._conn.execute(query, code_1, code_2)
             await self._conn.execute(query, code_2, code_1)
 
-    def _create_cloned_map_data_payload(self, *, map_data: MapReadDTO, code: OverwatchCode) -> MapCreateDTO:
+    def _create_cloned_map_data_payload(
+        self,
+        *,
+        map_data: MapReadDTO,
+        code: OverwatchCode,
+        is_official: bool,
+    ) -> MapCreateDTO:
         """Create a map creation payload by cloning an existing map.
 
         Generates a `MapCreateDTO` from an existing `MapReadDTO`, preserving all
@@ -1889,9 +1895,9 @@ class MapService(BaseService):
             creators=creators,
             checkpoints=map_data.checkpoints,
             difficulty=map_data.difficulty,
-            official=False,
+            official=is_official,
             hidden=True,
-            playtesting="Approved",
+            playtesting="In Progress" if is_official else "Approved",
             archived=False,
             mechanics=map_data.mechanics,
             restrictions=map_data.restrictions,
