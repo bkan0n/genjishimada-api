@@ -73,7 +73,7 @@ class BaseService:
             try:
                 job_id = uuid.uuid4()
                 if use_pool:
-                    async with self._pool.aquire() as conn:
+                    async with self._pool.acquire() as conn:
                         await conn.execute(
                             "INSERT INTO public.jobs (id, action) VALUES ($1, $2);",
                             job_id,

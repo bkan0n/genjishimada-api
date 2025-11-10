@@ -24,7 +24,7 @@ class InternalJobsService(BaseService):
 
     async def get_job_using_pool(self, job_id: uuid.UUID) -> JobStatus:
         """Get job status."""
-        async with self._pool.aquire() as conn:
+        async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, status::text, error_code, error_msg FROM public.jobs WHERE id=$1",
                 job_id,
