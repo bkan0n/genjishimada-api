@@ -1047,10 +1047,10 @@ async def wait_and_publish_newsfeed(
                     event.payload.official_code,
                 )
 
-            if row and row["thread_id"] is not None:
-                event.payload.playtest_id = row["thread_id"]
+                if row and row["thread_id"] is not None:
+                    event.payload.playtest_id = row["thread_id"]
 
-            await newsfeed.create_and_publish(event, headers=headers)
+                await newsfeed.create_and_publish(event, headers=headers, custom_conn=conn)  # type: ignore
         else:
             log.warning(
                 "Skipping newsfeed publish for job %s (status=%s)",

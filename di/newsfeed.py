@@ -24,6 +24,7 @@ class NewsfeedService(BaseService):
         event: NewsfeedEvent,
         *,
         headers: Headers,
+        custom_conn: Connection | None = None,
     ) -> CreatePublishNewsfeedReturnDTO:
         """Insert a newsfeed event and publish its ID to Rabbit.
 
@@ -39,7 +40,8 @@ class NewsfeedService(BaseService):
         """
         q = "INSERT INTO newsfeed (timestamp, payload) VALUES ($1, $2::jsonb) RETURNING id;"
         payload_obj = msgspec.to_builtins(event.payload)
-        new_id = await self._conn.fetchval(q, event.timestamp, payload_obj)
+        connection = custom_conn if custom_conn else self._conn
+        new_id = await connection.fetchval(q, event.timestamp, payload_obj)
         idempotency_key = f"newsfeed:create:{new_id}"
         job_status = await self.publish_message(
             routing_key="api.newsfeed.create",
