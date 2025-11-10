@@ -1022,7 +1022,7 @@ async def wait_and_publish_newsfeed(  # noqa: PLR0913
             )
             assert map_data.playtest
             event.payload.playtest_id = map_data.playtest.thread_id
-            await newsfeed.create_and_publish(event, headers=headers)
+            await newsfeed.create_and_publish(event, headers=headers, use_pool=True)
         else:
             log.warning(
                 "Skipping newsfeed publish for job %s (status=%s)",
