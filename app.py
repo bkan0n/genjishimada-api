@@ -162,6 +162,7 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
         openapi_config=openapi_config,
         exception_handlers={
             HTTPException: default_exception_handler,
+            CustomHTTPException: default_exception_handler,
             HTTP_500_INTERNAL_SERVER_ERROR: internal_server_error_handler,
         },
         lifespan=[rabbitmq_connection],
