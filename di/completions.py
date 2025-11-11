@@ -244,12 +244,7 @@ class CompletionsService(BaseService):
                 completion,
             )
         except asyncpg.exceptions.CheckViolationError as e:
-            log.info(f"{dir(e)=}")
-            log.info(f"{e.args=}")
-            log.info(f"{e.detail=}")
-            log.info(f"{e.message=}")
-            log.info(f"{e.hint=}")
-            raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.detail or "")
+            raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.message or "")
 
         idempotency_key = f"completion:submission:{data.user_id}:{res}"
         job_status = await self.publish_message(
