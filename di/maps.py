@@ -579,6 +579,7 @@ SELECT
     m.raw_difficulty,
     m.difficulty,
     m.title,
+    m.linked_code,
     m.custom_banner AS map_banner,
     COUNT(*) OVER() AS total_results
 {"FROM intersection_map_ids i" if self._intersect_subqueries else ""}
