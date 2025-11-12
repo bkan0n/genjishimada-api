@@ -1984,8 +1984,8 @@ class MapService(BaseService):
         if official_map.linked_code or unofficial_map.linked_code:
             raise CustomHTTPException(
                 detail=(
-                    "One or both maps already have a linked map code. "
-                    f"Official ({official_code}): {official_map.linked_code} | "
+                    "One or both maps already have a linked map code.\n"
+                    f"Official ({official_code}): {official_map.linked_code}\n"
                     f"Unofficial CN ({unofficial_code}): {unofficial_map.linked_code}"
                 ),
                 status_code=HTTP_400_BAD_REQUEST,
@@ -2036,8 +2036,8 @@ class MapService(BaseService):
         if not official_map or not unofficial_map:
             raise CustomHTTPException(
                 detail=(
-                    "One or both codes found no matching maps. "
-                    f"Official ({official_code}): {'FOUND' if official_map else 'NOT FOUND'} | "
+                    "One or both codes found no matching maps.\n"
+                    f"Official ({official_code}): {'FOUND' if official_map else 'NOT FOUND'}\n"
                     f"Unofficial CN ({unofficial_code}): {'FOUND' if unofficial_map else 'NOT FOUND'}"
                 ),
                 status_code=HTTP_400_BAD_REQUEST,
@@ -2045,8 +2045,8 @@ class MapService(BaseService):
         if not official_map.linked_code or not unofficial_map.linked_code:
             raise CustomHTTPException(
                 detail=(
-                    "One or both codes have no linked map. "
-                    f"Official ({official_code}): Linked to {official_map.linked_code} | "
+                    "One or both codes have no linked map.\n"
+                    f"Official ({official_code}): Linked to {official_map.linked_code}\n"
                     f"Unofficial CN ({unofficial_code}): Linked to {unofficial_map.linked_code}"
                 ),
                 status_code=HTTP_400_BAD_REQUEST,
