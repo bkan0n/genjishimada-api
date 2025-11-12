@@ -30,12 +30,13 @@ from genjipk_sdk.models import (
     NewsfeedLinkedMap,
     NewsfeedMapEdit,
     NewsfeedUnarchive,
+    NewsfeedUnlinkedMap,
     QualityValueDTO,
     SendToPlaytestDTO,
     TrendingMapReadDTO,
 )
 from genjipk_sdk.models.jobs import CreateMapReturnDTO
-from genjipk_sdk.models.maps import LinkMapsCreateDTO
+from genjipk_sdk.models.maps import LinkMapsCreateDTO, UnlinkMapsCreateDTO
 from genjipk_sdk.utilities import DifficultyTop
 from genjipk_sdk.utilities._types import (
     GuideURL,
@@ -904,8 +905,8 @@ class BaseMapsController(litestar.Controller):
 
     @litestar.post(
         path="/link-codes",
-        summary="Link a official and unofficial map.",
-        description="Link a official and unofficial map and create a playtest and newsfeed if needed.",
+        summary="Link Maps.",
+        description="Link an official and unofficial map and create a playtest and newsfeed if needed.",
     )
     async def link_map_codes(
         self,
@@ -967,6 +968,31 @@ class BaseMapsController(litestar.Controller):
             await newsfeed.create_and_publish(event, headers=request.headers)
 
         return status
+
+    @litestar.delete(
+        path="/link-codes",
+        summary="Unlink Maps.",
+        description="Unlink an official and unofficial map.",
+    )
+    async def unlink_map_codes(
+        self,
+        request: litestar.Request,
+        svc: MapService,
+        newsfeed: NewsfeedService,
+        data: UnlinkMapsCreateDTO,
+    ) -> JobStatus | None:
+        """Unlink two map codes."""
+        await svc.unlink_two_map_codes(
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+        )
+        payload = NewsfeedUnlinkedMap(
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+            reason=data.reason,
+        )
+        event = NewsfeedEvent(id=None, timestamp=dt.datetime.now(dt.UTC), payload=payload, event_type="unlinked_map")
+        await newsfeed.create_and_publish(event, headers=request.headers)
 
 
 async def wait_and_publish_newsfeed(  # noqa: PLR0913

@@ -1981,6 +1981,16 @@ class MapService(BaseService):
                 status_code=HTTP_400_BAD_REQUEST,
             )
 
+        if official_map.linked_code or unofficial_map.linked_code:
+            raise CustomHTTPException(
+                detail=(
+                    "One or both maps already have a linked map code. "
+                    f"Official ({official_code}): {official_map.linked_code} | "
+                    f"Unofficial CN ({unofficial_code}): {unofficial_map.linked_code}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
         needs_clone_only = official_map and not unofficial_map
         needs_clone_and_playtest = not official_map and unofficial_map
         needs_link_only = official_map and unofficial_map
@@ -2009,6 +2019,34 @@ class MapService(BaseService):
             return None, False
 
         return None, False
+
+    async def unlink_two_map_codes(
+        self,
+        official_code: OverwatchCode,
+        unofficial_code: OverwatchCode,
+    ) -> None:
+        """Unlink two map codes.
+
+        Args:
+            official_code (OverwatchCode): The official map code.
+            unofficial_code (OverwatchCode): The unofficial map code.
+        """
+        official_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=official_code))
+        unofficial_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=unofficial_code))
+        if not official_map or not unofficial_map:
+            raise CustomHTTPException(
+                detail=(
+                    "One or both codes found no matching maps."
+                    f"Official ({official_code}): {'FOUND' if official_map else 'NOT FOUND'} | "
+                    f"Unofficial CN ({unofficial_code}): {'FOUND' if unofficial_map else 'NOT FOUND'}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        query = "UPDATE core.maps SET linked_code=NULL WHERE code=$1;"
+        async with self._conn.transaction():
+            await self._conn.execute(query, official_code)
+            await self._conn.execute(query, unofficial_code)
 
 
 async def provide_map_service(conn: Connection, state: State) -> MapService:
