@@ -23,7 +23,6 @@ from genjipk_sdk.models.maps import (
 from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll, convert_raw_difficulty_to_difficulty_all
 from litestar import Request
 from litestar.datastructures import State
-from litestar.exceptions import HTTPException
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
 from utilities.errors import CustomHTTPException
@@ -123,9 +122,9 @@ class PlaytestService(BaseService):
         try:
             await self._conn.execute(q, user_id, thread_id, data.difficulty)
         except asyncpg.exceptions.CheckViolationError:
-            raise HTTPException(
+            raise CustomHTTPException(
                 status_code=HTTP_400_BAD_REQUEST,
-                extra={"msg": "This user does not have a verified, non-legacy record associated with this map code"},
+                detail="Vote failed. You do not have a verified, non-completion submission associated with this map.",
             )
         payload = PlaytestVoteCastMQ(
             thread_id=thread_id,
@@ -146,7 +145,8 @@ class PlaytestService(BaseService):
         vote_check_q = "SELECT EXISTS(SELECT 1 FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2);"
         if not await self._conn.fetchval(vote_check_q, thread_id, user_id):
             raise CustomHTTPException(
-                "There is no vote asssociated with this playtest thread and user id.", status_code=HTTP_400_BAD_REQUEST
+                status_code=HTTP_400_BAD_REQUEST,
+                detail="You do not have a vote to remove.",
             )
 
         q = "DELETE FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2"
