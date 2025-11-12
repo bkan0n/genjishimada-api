@@ -2052,7 +2052,7 @@ class MapService(BaseService):
                 status_code=HTTP_400_BAD_REQUEST,
             )
 
-        if official_map.linked_code != unofficial_map.linked_code:
+        if official_map.linked_code != unofficial_code and unofficial_map.linked_code != official_code:
             raise CustomHTTPException(
                 detail=(
                     "The two maps given do not link to each other. "
