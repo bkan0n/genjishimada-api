@@ -2036,9 +2036,28 @@ class MapService(BaseService):
         if not official_map or not unofficial_map:
             raise CustomHTTPException(
                 detail=(
-                    "One or both codes found no matching maps."
+                    "One or both codes found no matching maps. "
                     f"Official ({official_code}): {'FOUND' if official_map else 'NOT FOUND'} | "
                     f"Unofficial CN ({unofficial_code}): {'FOUND' if unofficial_map else 'NOT FOUND'}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+        if not official_map.linked_code or not unofficial_map.linked_code:
+            raise CustomHTTPException(
+                detail=(
+                    "One or both codes have no linked map. "
+                    f"Official ({official_code}): Linked to {official_map.linked_code} | "
+                    f"Unofficial CN ({unofficial_code}): Linked to {unofficial_map.linked_code}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        if official_map.linked_code != unofficial_map.linked_code:
+            raise CustomHTTPException(
+                detail=(
+                    "The two maps given do not link to each other. "
+                    f"Official ({official_code}): Linked to {official_map.linked_code} | "
+                    f"Unofficial CN ({unofficial_code}): Linked to {unofficial_map.linked_code}"
                 ),
                 status_code=HTTP_400_BAD_REQUEST,
             )
