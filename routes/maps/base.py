@@ -980,7 +980,7 @@ class BaseMapsController(litestar.Controller):
         svc: MapService,
         newsfeed: NewsfeedService,
         data: UnlinkMapsCreateDTO,
-    ) -> JobStatus | None:
+    ) -> None:
         """Unlink two map codes."""
         await svc.unlink_two_map_codes(
             official_code=data.official_code,
