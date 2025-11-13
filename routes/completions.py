@@ -141,7 +141,7 @@ class CompletionsController(Controller):
 
         async with (
             aiohttp.ClientSession() as session,
-            session.post("http://genjishimada-ocr-dev:8000/extract", data={"image_url": data.screenshot}) as resp,
+            session.post("http://genjishimada-ocr-dev:8000/extract", json={"image_url": data.screenshot}) as resp,
         ):
             resp.raise_for_status()
             raw_ocr_data = await resp.read()
