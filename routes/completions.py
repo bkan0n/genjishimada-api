@@ -1,8 +1,8 @@
-import base64
 from logging import getLogger
 from typing import Literal
 
 import aiohttp
+import msgspec
 from genjipk_sdk.models import (
     CompletionCreateDTO,
     CompletionPatchDTO,
@@ -26,10 +26,39 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
-from di import CompletionsService, provide_completions_service, provide_user_service
+from di import CompletionsService, UserService, provide_completions_service, provide_user_service
 from utilities.errors import CustomHTTPException
 
 log = getLogger(__name__)
+
+
+def to_camel(name: str) -> str:
+    parts = name.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
+
+
+class CamelConfig(msgspec.Struct, rename=to_camel):
+    """Base struct that renames fields to camelCase during encoding/decoding."""
+
+
+class ExtractedTexts(CamelConfig):
+    top_left: str | None
+    top_left_white: str | None
+    top_left_cyan: str | None
+    banner: str | None
+    top_right: str | None
+    bottom_left: str | None
+
+
+class ExtractedResult(CamelConfig):
+    name: str | None
+    time: float | None
+    code: str | None
+    texts: ExtractedTexts
+
+
+class OcrApiResponse(CamelConfig):
+    extracted: ExtractedResult
 
 
 class CompletionsController(Controller):
@@ -95,6 +124,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         data: CompletionCreateDTO,
+        users: UserService,
     ) -> SubmitCompletionReturnDTO:
         """Submit a new completion.
 
@@ -109,16 +139,31 @@ class CompletionsController(Controller):
         """
         completion_id = await svc.submit_completion(data)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(data.screenshot) as resp:
-                resp.raise_for_status()
-                screenshot_data = await resp.read()
-                b64_str = base64.b64encode(screenshot_data).decode("utf-8")
-                log.info(b64_str)
-            async with session.post("http://genjishimada-ocr-dev:8000/extract", data={"image_b64": b64_str}):
-                resp.raise_for_status()
-                ocr_data = await resp.read()
-        log.info(ocr_data)
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post("http://genjishimada-ocr-dev:8000/extract", data={"image_url": data.screenshot}) as resp,
+        ):
+            resp.raise_for_status()
+            raw_ocr_data = await resp.read()
+            ocr_data = msgspec.convert(raw_ocr_data, OcrApiResponse)
+
+        extracted = ocr_data.extracted
+        user_data = await users.get_user(data.user_id)
+        assert user_data
+        all_names = {
+            user_data.global_name,
+            user_data.nickname,
+            *(user_data.overwatch_usernames if user_data.overwatch_usernames else ()),
+        }
+        if data.code == extracted.code and data.time == extracted.time and extracted.name in all_names:
+            verification_data = CompletionVerificationPutDTO(
+                verified_by=969632729643753482,
+                verified=True,
+                reason="Auto Approved by Genji Shimada.",
+            )
+            job_status = await svc.verify_completion(request, completion_id, verification_data)
+            return SubmitCompletionReturnDTO(job_status, completion_id)
+
         idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
         job_status = await svc.publish_message(
             routing_key="api.completion.submission",
