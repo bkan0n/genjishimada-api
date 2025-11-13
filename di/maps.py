@@ -364,6 +364,7 @@ class MapSearchSQLBuilder:
 
         if self._filters.playtest_filter:
             print("AAAAAAAAAAAAA")
+            print(self._filters.playtest_filter)
             match self._filters.playtest_filter:
                 case "Without":
                     self._where_clauses.append("pm.thread_id IS NULL")
