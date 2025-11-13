@@ -125,19 +125,30 @@ class CompletionsController(Controller):
         """
         completion_id = await svc.submit_completion(data)
 
-        task = asyncio.create_task(
-            _attempt_auto_verify(
-                request=request,
-                svc=svc,
-                autocomplete=autocomplete,
-                completion_id=completion_id,
-                data=data,
+        if not data.video:
+            task = asyncio.create_task(
+                _attempt_auto_verify(
+                    request=request,
+                    svc=svc,
+                    autocomplete=autocomplete,
+                    completion_id=completion_id,
+                    data=data,
+                )
             )
-        )
-        self._tasks.add(task)
-        task.add_done_callback(lambda t: self._tasks.remove(t))
+            self._tasks.add(task)
+            task.add_done_callback(lambda t: self._tasks.remove(t))
 
-        return SubmitCompletionReturnDTO(None, completion_id)
+            return SubmitCompletionReturnDTO(None, completion_id)
+
+        idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
+        job_status = await svc.publish_message(
+            routing_key="api.completion.submission",
+            data=MessageQueueCompletionsCreate(completion_id),
+            headers=request.headers,
+            idempotency_key=idempotency_key,
+            use_pool=True,
+        )
+        return SubmitCompletionReturnDTO(job_status, completion_id)
 
     @patch(
         path="/{record_id:int}",
