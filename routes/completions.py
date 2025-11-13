@@ -26,7 +26,14 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
-from di import CompletionsService, UserService, provide_completions_service, provide_user_service
+from di import (
+    AutocompleteService,
+    CompletionsService,
+    UserService,
+    provide_autocomplete_service,
+    provide_completions_service,
+    provide_user_service,
+)
 from utilities.errors import CustomHTTPException
 
 log = getLogger(__name__)
@@ -66,7 +73,11 @@ class CompletionsController(Controller):
 
     tags = ["Completions"]
     path = "/completions"
-    dependencies = {"svc": Provide(provide_completions_service), "users": Provide(provide_user_service)}
+    dependencies = {
+        "svc": Provide(provide_completions_service),
+        "users": Provide(provide_user_service),
+        "autocomplete": Provide(provide_autocomplete_service),
+    }
 
     @get(
         path="/",
@@ -125,6 +136,7 @@ class CompletionsController(Controller):
         request: Request,
         data: CompletionCreateDTO,
         users: UserService,
+        autocomplete: AutocompleteService,
     ) -> SubmitCompletionReturnDTO:
         """Submit a new completion.
 
@@ -152,6 +164,7 @@ class CompletionsController(Controller):
         log.info(f"{extracted=}")
         user_data = await users.get_user(data.user_id)
         log.info(f"{user_data=}")
+
         assert user_data
         all_names = {
             user_data.global_name,
@@ -159,15 +172,21 @@ class CompletionsController(Controller):
             *(user_data.overwatch_usernames if user_data.overwatch_usernames else ()),
         }
         all_names_case_folded = {s.casefold() for s in all_names}
+
         log.info(f"{all_names=}")
         log.info(f"{data.code} =? {extracted.code}")
         log.info(f"{data.time} =? {extracted.time}")
         log.info(f"{extracted.name} =? {all_names_case_folded}")
-        extracted.name = extracted.name or "Not Found."
+
+        extracted_user_cleaned = await autocomplete.get_similar_users(extracted.name or "")
+        extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "")
+        log.info(f"{extracted_user_cleaned=}")
+        log.info(f"{extracted_code_cleaned=}")
+
         if (
-            data.code == extracted.code
+            data.code == extracted_code_cleaned
             and data.time == extracted.time
-            and extracted.name.casefold() in all_names_case_folded
+            and (extracted_user_cleaned and extracted_user_cleaned[0][1].casefold() in all_names_case_folded)
         ):
             verification_data = CompletionVerificationPutDTO(
                 verified_by=969632729643753482,
