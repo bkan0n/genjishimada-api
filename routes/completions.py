@@ -170,7 +170,8 @@ class CompletionsController(Controller):
         extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "")
         log.info(f"{extracted_user_cleaned=}")
         log.info(f"{extracted_code_cleaned=}")
-
+        if extracted_code_cleaned:
+            extracted_code_cleaned.replace('"', "")
         log.info(data.code == extracted_code_cleaned)
         log.info(f"{data.code}")
         log.info(f"{extracted_code_cleaned}")
