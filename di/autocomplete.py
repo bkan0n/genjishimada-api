@@ -169,6 +169,7 @@ class AutocompleteService(BaseService):
         archived: bool | None = None,
         hidden: bool | None = None,
         playtesting: PlaytestStatus | None = None,
+        use_pool: bool = False,
     ) -> OverwatchCode | None:
         """Transform a map name into a code.
 
@@ -196,8 +197,11 @@ class AutocompleteService(BaseService):
                 END DESC
             LIMIT 1;
         """
-
-        res = cast("OverwatchCode", await self._conn.fetchval(query, search, archived, hidden, playtesting))
+        if use_pool:
+            async with self._pool.acquire() as conn:
+                res = cast("OverwatchCode", await conn.fetchval(query, search, archived, hidden, playtesting))
+        else:
+            res = cast("OverwatchCode", await self._conn.fetchval(query, search, archived, hidden, playtesting))
         if res is None:
             return None
         return f'"{res}"'  # type: ignore
@@ -207,6 +211,7 @@ class AutocompleteService(BaseService):
         search: str,
         limit: int = 10,
         fake_users_only: bool = False,
+        use_pool: bool = False,
     ) -> list[tuple[int, str]] | None:
         """Get similar users by nickname, global name, or Overwatch username.
 
@@ -266,7 +271,11 @@ class AutocompleteService(BaseService):
             END AS name
         FROM user_names;
         """
-        res = await self._conn.fetch(query, search, limit, fake_users_only)
+        if use_pool:
+            async with self._pool.acquire() as conn:
+                res = await conn.fetch(query, search, limit, fake_users_only)
+        else:
+            res = await self._conn.fetch(query, search, limit, fake_users_only)
         if not res:
             return None
         return [(r["user_id"], r["name"]) for r in res]
