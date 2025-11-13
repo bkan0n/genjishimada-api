@@ -162,21 +162,9 @@ class CompletionsController(Controller):
         log.info(f"{ocr_data=}")
         extracted = ocr_data.extracted
         log.info(f"{extracted=}")
-        user_data = await users.get_user(data.user_id)
-        log.info(f"{user_data=}")
 
-        assert user_data
-        all_names = {
-            user_data.global_name,
-            user_data.nickname,
-            *(user_data.overwatch_usernames if user_data.overwatch_usernames else ()),
-        }
-        all_names_case_folded = {s.casefold() for s in all_names}
-
-        log.info(f"{all_names=}")
         log.info(f"{data.code} =? {extracted.code}")
         log.info(f"{data.time} =? {extracted.time}")
-        log.info(f"{extracted.name} =? {all_names_case_folded}")
 
         extracted_user_cleaned = await autocomplete.get_similar_users(extracted.name or "")
         extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "")
@@ -186,7 +174,7 @@ class CompletionsController(Controller):
         if (
             data.code == extracted_code_cleaned
             and data.time == extracted.time
-            and (extracted_user_cleaned and extracted_user_cleaned[0][1].casefold() in all_names_case_folded)
+            and (extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)
         ):
             verification_data = CompletionVerificationPutDTO(
                 verified_by=969632729643753482,
