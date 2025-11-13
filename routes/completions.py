@@ -171,6 +171,9 @@ class CompletionsController(Controller):
         log.info(f"{extracted_user_cleaned=}")
         log.info(f"{extracted_code_cleaned=}")
 
+        log.info(data.code == extracted_code_cleaned)
+        log.info(data.time == extracted.time)
+        log.info(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)
         if (
             data.code == extracted_code_cleaned
             and data.time == extracted.time
