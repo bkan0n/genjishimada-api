@@ -1,3 +1,4 @@
+from .autocomplete import AutocompleteService, provide_autocomplete_service
 from .change_requests import ChangeRequestsService, provide_change_requests_service
 from .community import CommunityService, provide_community_service
 from .completions import CompletionsService, provide_completions_service
@@ -11,6 +12,7 @@ from .rank_card import RankCardService, provide_rank_card_service
 from .users import UserService, provide_user_service
 
 __all__ = (
+    "AutocompleteService",
     "ChangeRequestsService",
     "CommunityService",
     "CompletionsService",
@@ -22,6 +24,7 @@ __all__ = (
     "PlaytestService",
     "RankCardService",
     "UserService",
+    "provide_autocomplete_service",
     "provide_change_requests_service",
     "provide_community_service",
     "provide_completions_service",
