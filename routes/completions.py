@@ -147,14 +147,22 @@ class CompletionsController(Controller):
             raw_ocr_data = await resp.read()
             ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrApiResponse)
 
+        log.info(f"{ocr_data=}")
         extracted = ocr_data.extracted
+        log.info(f"{extracted=}")
         user_data = await users.get_user(data.user_id)
+        log.info(f"{user_data=}")
         assert user_data
         all_names = {
             user_data.global_name,
             user_data.nickname,
             *(user_data.overwatch_usernames if user_data.overwatch_usernames else ()),
         }
+        log.info(f"{all_names=}")
+        log.info(f"{data.code} =? {extracted.code}")
+        log.info(f"{data.time} =? {extracted.time}")
+        log.info(f"{extracted.name} =? {all_names}")
+
         if data.code == extracted.code and data.time == extracted.time and extracted.name in all_names:
             verification_data = CompletionVerificationPutDTO(
                 verified_by=969632729643753482,
