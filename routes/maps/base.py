@@ -1,3 +1,4 @@
+import asyncio
 import datetime as dt
 import inspect
 import re
@@ -26,14 +27,16 @@ from genjipk_sdk.models import (
     NewsfeedFieldChange,
     NewsfeedGuide,
     NewsfeedLegacyRecord,
+    NewsfeedLinkedMap,
     NewsfeedMapEdit,
-    NewsfeedNewMap,
     NewsfeedUnarchive,
+    NewsfeedUnlinkedMap,
     QualityValueDTO,
     SendToPlaytestDTO,
     TrendingMapReadDTO,
 )
 from genjipk_sdk.models.jobs import CreateMapReturnDTO
+from genjipk_sdk.models.maps import LinkMapsCreateDTO, UnlinkMapsCreateDTO
 from genjipk_sdk.utilities import DifficultyTop
 from genjipk_sdk.utilities._types import (
     GuideURL,
@@ -44,14 +47,17 @@ from genjipk_sdk.utilities._types import (
     PlaytestStatus,
     Restrictions,
 )
+from litestar.datastructures import Headers
 from litestar.di import Provide
 from litestar.response import Response, Stream
 from litestar.status_codes import HTTP_200_OK, HTTP_400_BAD_REQUEST
 
+from di.jobs import InternalJobsService, provide_internal_jobs_service
 from di.maps import CompletionFilter, MapSearchFilters, MapService, MedalFilter, provide_map_service
 from di.newsfeed import NewsfeedService, provide_newsfeed_service
 from di.users import UserService, provide_user_service
 from utilities.errors import CustomHTTPException
+from utilities.jobs import wait_for_job_completion
 
 log = getLogger(__name__)
 
@@ -258,7 +264,9 @@ class BaseMapsController(litestar.Controller):
         "svc": Provide(provide_map_service),
         "newsfeed": Provide(provide_newsfeed_service),
         "users": Provide(provide_user_service),
+        "jobs": Provide(provide_internal_jobs_service),
     }
+    linked_code_job_statuses = set()
 
     @litestar.get(
         "/",
@@ -404,26 +412,7 @@ class BaseMapsController(litestar.Controller):
             MapReadDTO: Created map.
 
         """
-        _data = await svc.create_map(data, request)
-        if data.playtesting == "Approved":
-            event_payload = NewsfeedNewMap(
-                code=_data.data.code,
-                map_name=_data.data.map_name,
-                difficulty=_data.data.difficulty,
-                creators=[x.name for x in _data.data.creators],
-                banner_url=_data.data.map_banner,
-                official=data.official,
-                title=data.title,
-            )
-
-            event = NewsfeedEvent(
-                id=None,
-                timestamp=dt.datetime.now(dt.timezone.utc),
-                payload=event_payload,
-                event_type="new_map",
-            )
-            await newsfeed.create_and_publish(event, headers=request.headers)
-
+        _data = await svc.create_map(data, request, newsfeed)
         return _data
 
     async def _generate_patch_newsfeed(  # noqa: PLR0913
@@ -913,3 +902,141 @@ class BaseMapsController(litestar.Controller):
     ) -> JobStatus:
         """Send a map back to playtest."""
         return await svc.send_map_to_playtest(code=code, data=data, request=request)
+
+    @litestar.post(
+        path="/link-codes",
+        summary="Link Maps.",
+        description="Link an official and unofficial map and create a playtest and newsfeed if needed.",
+    )
+    async def link_map_codes(
+        self,
+        request: litestar.Request,
+        svc: MapService,
+        newsfeed: NewsfeedService,
+        jobs: InternalJobsService,
+        data: LinkMapsCreateDTO,
+    ) -> JobStatus | None:
+        """Link an official and unofficial map and publish a newsfeed event.
+
+        Links two map codes through the MapService. If a new playtest or clone needs
+        to be created, this endpoint triggers the appropriate service logic and
+        publishes a `linked_map` event to the newsfeed service.
+
+        Args:
+            request (litestar.Request): The current HTTP request context.
+            jobs (InternalJobsService): Service providing `get_job` for polling.
+            svc (MapService): Service responsible for map management and linking logic.
+            newsfeed (NewsfeedService): Service for creating and publishing newsfeed events.
+            data (LinkMapsCreateDTO): The payload containing `official_code` and `unofficial_code`.
+
+        Returns:
+            JobStatus | None: A job status object if a map clone or playtest was created;
+                otherwise `None` if only a link was established.
+
+        Raises:
+            HTTPException: If linking or newsfeed publishing fails.
+        """
+        status, in_playtest = await svc.link_official_and_unofficial_map(
+            request=request,
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+            newsfeed=newsfeed,
+        )
+
+        payload = NewsfeedLinkedMap(
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+        )
+        event = NewsfeedEvent(id=None, timestamp=dt.datetime.now(dt.UTC), payload=payload, event_type="linked_map")
+
+        if in_playtest:
+            assert status
+            task = asyncio.create_task(
+                wait_and_publish_newsfeed(
+                    svc=svc,
+                    jobs=jobs,
+                    newsfeed=newsfeed,
+                    status=status,
+                    event=event,
+                    headers=request.headers,
+                )
+            )
+            self.linked_code_job_statuses.add(task)
+            task.add_done_callback(lambda t: self.linked_code_job_statuses.remove(t))
+
+        else:
+            await newsfeed.create_and_publish(event, headers=request.headers)
+
+        return status
+
+    @litestar.delete(
+        path="/link-codes",
+        summary="Unlink Maps.",
+        description="Unlink an official and unofficial map.",
+    )
+    async def unlink_map_codes(
+        self,
+        request: litestar.Request,
+        svc: MapService,
+        newsfeed: NewsfeedService,
+        data: UnlinkMapsCreateDTO,
+    ) -> None:
+        """Unlink two map codes."""
+        await svc.unlink_two_map_codes(
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+        )
+        payload = NewsfeedUnlinkedMap(
+            official_code=data.official_code,
+            unofficial_code=data.unofficial_code,
+            reason=data.reason,
+        )
+        event = NewsfeedEvent(id=None, timestamp=dt.datetime.now(dt.UTC), payload=payload, event_type="unlinked_map")
+        await newsfeed.create_and_publish(event, headers=request.headers)
+
+
+async def wait_and_publish_newsfeed(  # noqa: PLR0913
+    *,
+    svc: MapService,
+    jobs: InternalJobsService,
+    newsfeed: NewsfeedService,
+    status: JobStatus,
+    event: NewsfeedEvent,
+    headers: Headers,
+) -> None:
+    """Wait for a job to complete, then publish a newsfeed event.
+
+    Args:
+        svc (MapService): Service responsible for map management and linking logic.
+        jobs (InternalJobsService): Service providing `get_job` for polling.
+        newsfeed (NewsfeedService): Service used to publish the newsfeed event.
+        status (JobStatus): The initial job status returned from the map service.
+        event (NewsfeedEvent): The event to publish once the job finishes.
+        headers (Headers): HTTP headers to include when publishing.
+
+    Returns:
+        None
+    """
+    try:
+        final_status = await wait_for_job_completion(
+            job_id=status.id,
+            fetch_status=jobs.get_job_using_pool,  # same signature as before
+            timeout=90.0,
+        )
+
+        if final_status.status == "succeeded":
+            assert isinstance(event.payload, NewsfeedLinkedMap)
+            map_data = await svc.fetch_maps(
+                single=True, filters=MapSearchFilters(code=event.payload.official_code), use_pool=True
+            )
+            assert map_data.playtest
+            event.payload.playtest_id = map_data.playtest.thread_id
+            await newsfeed.create_and_publish(event, headers=headers, use_pool=True)
+        else:
+            log.warning(
+                "Skipping newsfeed publish for job %s (status=%s)",
+                final_status.id,
+                final_status.status,
+            )
+    except Exception:
+        log.exception("Error while waiting for job completion for event publish.")

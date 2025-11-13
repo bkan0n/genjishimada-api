@@ -72,6 +72,11 @@ async def _async_pg_init(conn: AsyncpgConnection) -> None:
     await conn.set_type_codec("numeric", encoder=str, decoder=float, schema="pg_catalog", format="text")
 
 
+class HealthcheckEndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/healthcheck") == -1
+
+
 def create_app(psql_dsn: str | None = None) -> Litestar:
     """Create and configure a Litestar application.
 
@@ -162,13 +167,14 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
         openapi_config=openapi_config,
         exception_handlers={
             HTTPException: default_exception_handler,
+            CustomHTTPException: default_exception_handler,
             HTTP_500_INTERNAL_SERVER_ERROR: internal_server_error_handler,
         },
         lifespan=[rabbitmq_connection],
         logging_config=logging_config,
         middleware=[auth_middleware],
     )
-
+    logging.getLogger("uvicorn.access").addFilter(HealthcheckEndpointFilter())
     return _app
 
 

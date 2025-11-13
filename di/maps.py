@@ -1,3 +1,4 @@
+import datetime as dt
 import functools
 import itertools
 from logging import getLogger
@@ -21,6 +22,8 @@ from genjipk_sdk.models import (
     MapReadPartialDTO,
     Medals,
     MessageQueueCreatePlaytest,
+    NewsfeedEvent,
+    NewsfeedNewMap,
     PlaytestCreatePartialDTO,
     QualityValueDTO,
     SendToPlaytestDTO,
@@ -51,6 +54,7 @@ from litestar.response import Stream
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
 from di.base import BaseService
+from di.newsfeed import NewsfeedService
 from utilities.errors import CustomHTTPException, parse_pg_detail
 from utilities.playtest_plot import build_playtest_plot
 from utilities.shared_queries import get_map_mastery_data
@@ -575,6 +579,7 @@ SELECT
     m.raw_difficulty,
     m.difficulty,
     m.title,
+    m.linked_code,
     m.custom_banner AS map_banner,
     COUNT(*) OVER() AS total_results
 {"FROM intersection_map_ids i" if self._intersect_subqueries else ""}
@@ -696,7 +701,12 @@ def _handle_exceptions(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable
 
 class MapService(BaseService):
     @_handle_exceptions
-    async def create_map(self, data: MapCreateDTO, request: Request) -> CreateMapReturnDTO:
+    async def create_map(
+        self,
+        data: MapCreateDTO,
+        request: Request,
+        newsfeed_service: NewsfeedService,
+    ) -> CreateMapReturnDTO:
         """Create a map.
 
         Within a transaction, inserts the core map row and all related data (creators, guide,
@@ -706,12 +716,15 @@ class MapService(BaseService):
         Args:
             data (MapCreateDTO): Map creation payload.
             request (Request): Request.
+            newsfeed_service (NewsfeedService): Manages newsfeed events
 
         Returns:
             MapReadDTO: The created map.
 
         """
         async with self._conn.transaction():
+            if not data.official and data.playtesting != "Approved":
+                data.playtesting = "Approved"
             map_id = await self._insert_core_map_data(data)
             await self._insert_creators(map_id, data.creators, remove_existing=False)
             await self._insert_guide(map_id, data.guide_url, data.primary_creator_id)
@@ -732,6 +745,26 @@ class MapService(BaseService):
                 )
 
         map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=data.code))
+
+        if data.playtesting == "Approved" and newsfeed_service:
+            event_payload = NewsfeedNewMap(
+                code=map_data.code,
+                map_name=map_data.map_name,
+                difficulty=map_data.difficulty,
+                creators=[x.name for x in map_data.creators],
+                banner_url=map_data.map_banner,
+                official=data.official,
+                title=data.title,
+            )
+
+            event = NewsfeedEvent(
+                id=None,
+                timestamp=dt.datetime.now(dt.timezone.utc),
+                payload=event_payload,
+                event_type="new_map",
+            )
+            await newsfeed_service.create_and_publish(event, headers=request.headers, use_pool=True)
+
         return CreateMapReturnDTO(job_status, map_data)
 
     @_handle_exceptions
@@ -859,21 +892,17 @@ class MapService(BaseService):
 
     @overload
     async def fetch_maps(
-        self,
-        *,
-        single: Literal[True],
-        filters: MapSearchFilters,
+        self, *, single: Literal[True], filters: MapSearchFilters, use_pool: bool = False
     ) -> MapReadDTO: ...
 
     @overload
     async def fetch_maps(
-        self,
-        *,
-        single: Literal[False],
-        filters: MapSearchFilters,
+        self, *, single: Literal[False], filters: MapSearchFilters, use_pool: bool = False
     ) -> list[MapReadDTO]: ...
 
-    async def fetch_maps(self, *, single: bool, filters: MapSearchFilters) -> list[MapReadDTO] | MapReadDTO | None:
+    async def fetch_maps(
+        self, *, single: bool, filters: MapSearchFilters, use_pool: bool = False
+    ) -> list[MapReadDTO] | MapReadDTO | None:
         """Fetch maps from the database with any filter.
 
         Builds SQL with `MapSearchSQLBuilder`, executes it, converts rows to `MapReadDTO`,
@@ -882,6 +911,7 @@ class MapService(BaseService):
         Args:
             single (bool): If True, return the first result only.
             filters (MapSearchFilters): All supported search filters and pagination.
+            use_pool (bool): Whether or not to use a pool for the connection.
 
         Returns:
             list[MapReadDTO] | MapReadDTO | None: Matching maps (or first map when `single=True`).
@@ -889,7 +919,11 @@ class MapService(BaseService):
         """
         builder = MapSearchSQLBuilder(filters)
         query, args = builder.build()
-        rows = await self._conn.fetch(query, *args)
+        if use_pool:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+        else:
+            rows = await self._conn.fetch(query, *args)
         _models = msgspec.convert(rows, list[MapReadDTO])
         if not _models:
             return _models
@@ -1842,6 +1876,196 @@ class MapService(BaseService):
             limit,
         )
         return msgspec.convert(rows, list[TrendingMapReadDTO])
+
+    async def _link_two_map_codes(
+        self,
+        *,
+        code_1: OverwatchCode,
+        code_2: OverwatchCode,
+    ) -> None:
+        """Establish a bidirectional link between two map codes.
+
+        Updates both map records so that each one's `linked_code` field references
+        the other, ensuring a symmetrical relationship in the database.
+
+        Args:
+            code_1 (OverwatchCode): The first map code to link.
+            code_2 (OverwatchCode): The second map code to link.
+
+        """
+        query = "UPDATE core.maps SET linked_code=$2 WHERE code=$1;"
+        async with self._conn.transaction():
+            await self._conn.execute(query, code_1, code_2)
+            await self._conn.execute(query, code_2, code_1)
+
+    def _create_cloned_map_data_payload(
+        self,
+        *,
+        map_data: MapReadDTO,
+        code: OverwatchCode,
+        is_official: bool,
+    ) -> MapCreateDTO:
+        """Create a map creation payload by cloning an existing map.
+
+        Generates a `MapCreateDTO` from an existing `MapReadDTO`, preserving all
+        core fields such as creators, category, mechanics, and medals, while assigning
+        a new map code. The clone is marked as hidden, unofficial, and playtesting-approved.
+
+        Args:
+            map_data (MapReadDTO): The source map data to clone.
+            code (OverwatchCode): The new map code to assign to the cloned map.
+
+        Returns:
+            MapCreateDTO: The fully prepared DTO for creating the cloned map.
+        """
+        creators = [Creator(c.id, c.is_primary) for c in map_data.creators]
+        guide_url = map_data.guides[0] if map_data.guides else ""
+        create_map_payload = MapCreateDTO(
+            code=code,
+            map_name=map_data.map_name,
+            category=map_data.category,
+            creators=creators,
+            checkpoints=map_data.checkpoints,
+            difficulty=map_data.difficulty,
+            official=is_official,
+            hidden=is_official,
+            playtesting="In Progress" if is_official else "Approved",
+            archived=False,
+            mechanics=map_data.mechanics,
+            restrictions=map_data.restrictions,
+            description=map_data.description,
+            medals=map_data.medals,
+            guide_url=guide_url,
+            title=map_data.title,
+            custom_banner=map_data.map_banner,
+        )
+        return create_map_payload
+
+    async def link_official_and_unofficial_map(
+        self,
+        *,
+        request: Request,
+        official_code: OverwatchCode,
+        unofficial_code: OverwatchCode,
+        newsfeed: NewsfeedService,
+    ) -> tuple[JobStatus | None, bool]:
+        """Link an official and unofficial map, cloning as needed.
+
+        Determines which maps exist and performs the appropriate operation:
+        - Clone the official map if only it exists.
+        - Clone the unofficial map and initiate playtesting if only it exists.
+        - Link both directly if both exist.
+
+        Args:
+            request (Request): The active HTTP request context.
+            official_code (OverwatchCode): The official map code.
+            unofficial_code (OverwatchCode): The unofficial map code.
+            newsfeed (NewsfeedService): Manages newsfeed events.
+
+        Returns:
+            A tuple where the first item is:
+                JobStatus | None: The resulting job status if a clone or playtest was created;
+                    otherwise `None` when only a link operation was performed.
+            The second item is:
+                in_playtest: bool
+
+        Raises:
+            CustomHTTPException: If neither an official nor an unofficial map is provided.
+        """
+        official_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=official_code))
+        unofficial_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=unofficial_code))
+
+        if not official_map and not unofficial_map:
+            raise CustomHTTPException(
+                detail="You must have submit with at least one of official_code or unofficial_code.",
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        if official_map.linked_code or unofficial_map.linked_code:
+            raise CustomHTTPException(
+                detail=(
+                    "One or both maps already have a linked map code.\n"
+                    f"Official ({official_code}): {official_map.linked_code}\n"
+                    f"Unofficial CN ({unofficial_code}): {unofficial_map.linked_code}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        needs_clone_only = official_map and not unofficial_map
+        needs_clone_and_playtest = not official_map and unofficial_map
+        needs_link_only = official_map and unofficial_map
+
+        if needs_clone_only:
+            log.debug("needs clone only is TRUE")
+            payload = self._create_cloned_map_data_payload(
+                map_data=official_map, code=unofficial_code, is_official=False
+            )
+            res = await self.create_map(payload, request, newsfeed)
+            await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
+            return res.job_status, False
+
+        if needs_clone_and_playtest:
+            log.debug("needs clone AND playtest is TRUE")
+            payload = self._create_cloned_map_data_payload(
+                map_data=unofficial_map, code=official_code, is_official=True
+            )
+            res = await self.create_map(payload, request, newsfeed)
+            await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
+            return res.job_status, True
+
+        if needs_link_only:
+            log.debug("needs link only is TRUE")
+            await self._link_two_map_codes(code_1=official_code, code_2=unofficial_code)
+            return None, False
+
+        return None, False
+
+    async def unlink_two_map_codes(
+        self,
+        official_code: OverwatchCode,
+        unofficial_code: OverwatchCode,
+    ) -> None:
+        """Unlink two map codes.
+
+        Args:
+            official_code (OverwatchCode): The official map code.
+            unofficial_code (OverwatchCode): The unofficial map code.
+        """
+        official_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=official_code))
+        unofficial_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=unofficial_code))
+        if not official_map or not unofficial_map:
+            raise CustomHTTPException(
+                detail=(
+                    "One or both codes found no matching maps.\n"
+                    f"Official ({official_code}): {'FOUND' if official_map else 'NOT FOUND'}\n"
+                    f"Unofficial CN ({unofficial_code}): {'FOUND' if unofficial_map else 'NOT FOUND'}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+        if not official_map.linked_code or not unofficial_map.linked_code:
+            raise CustomHTTPException(
+                detail=(
+                    "One or both codes have no linked map.\n"
+                    f"Official ({official_code}): Linked to {official_map.linked_code}\n"
+                    f"Unofficial CN ({unofficial_code}): Linked to {unofficial_map.linked_code}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        if official_map.linked_code != unofficial_code and unofficial_map.linked_code != official_code:
+            raise CustomHTTPException(
+                detail=(
+                    "The two maps given do not link to each other. "
+                    f"Official ({official_code}): Linked to {official_map.linked_code} | "
+                    f"Unofficial CN ({unofficial_code}): Linked to {unofficial_map.linked_code}"
+                ),
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
+        query = "UPDATE core.maps SET linked_code=NULL WHERE code=$1;"
+        async with self._conn.transaction():
+            await self._conn.execute(query, official_code)
+            await self._conn.execute(query, unofficial_code)
 
 
 async def provide_map_service(conn: Connection, state: State) -> MapService:
