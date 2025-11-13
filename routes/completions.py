@@ -114,7 +114,7 @@ class CompletionsController(Controller):
                 resp.raise_for_status()
                 screenshot_data = await resp.read()  # read raw bytes
                 b64_str = base64.b64encode(screenshot_data).decode("utf-8")
-            async with session.get("http://genjishimada-ocr-dev:8000/extract", data={"image_b64": b64_str}):
+            async with session.post("http://genjishimada-ocr-dev:8000/extract", data={"image_b64": b64_str}):
                 resp.raise_for_status()
                 ocr_data = await resp.read()
         log.info(ocr_data)
