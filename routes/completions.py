@@ -158,12 +158,17 @@ class CompletionsController(Controller):
             user_data.nickname,
             *(user_data.overwatch_usernames if user_data.overwatch_usernames else ()),
         }
+        all_names_case_folded = {s.casefold() for s in all_names}
         log.info(f"{all_names=}")
         log.info(f"{data.code} =? {extracted.code}")
         log.info(f"{data.time} =? {extracted.time}")
-        log.info(f"{extracted.name} =? {all_names}")
-
-        if data.code == extracted.code and data.time == extracted.time and extracted.name in all_names:
+        log.info(f"{extracted.name} =? {all_names_case_folded}")
+        extracted.name = extracted.name or "Not Found."
+        if (
+            data.code == extracted.code
+            and data.time == extracted.time
+            and extracted.name.casefold() in all_names_case_folded
+        ):
             verification_data = CompletionVerificationPutDTO(
                 verified_by=969632729643753482,
                 verified=True,
