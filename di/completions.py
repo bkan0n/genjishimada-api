@@ -9,7 +9,6 @@ from genjipk_sdk.models import (
     CompletionPatchDTO,
     CompletionReadDTO,
     CompletionSubmissionReadDTO,
-    MessageQueueCompletionsCreate,
     MessageQueueVerificationChange,
     UpvoteUpdateDTO,
 )
@@ -20,7 +19,7 @@ from genjipk_sdk.models.completions import (
     SuspiciousCompletionWriteDTO,
     UpvoteCreateDTO,
 )
-from genjipk_sdk.models.jobs import JobStatus, SubmitCompletionReturnDTO, UpvoteSubmissionReturnDTO
+from genjipk_sdk.models.jobs import JobStatus, UpvoteSubmissionReturnDTO
 from genjipk_sdk.utilities import DifficultyAll
 from genjipk_sdk.utilities._types import OverwatchCode
 from litestar import Request
@@ -195,7 +194,7 @@ class CompletionsService(BaseService):
         models = msgspec.convert(rows, list[CompletionReadDTO])
         return models
 
-    async def submit_completion(self, request: Request, data: CompletionCreateDTO) -> SubmitCompletionReturnDTO:
+    async def submit_completion(self, data: CompletionCreateDTO) -> int:
         """Submit a new completion record and publish an event.
 
         Args:
@@ -246,15 +245,7 @@ class CompletionsService(BaseService):
         except asyncpg.exceptions.CheckViolationError as e:
             raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.message or "")
 
-        idempotency_key = f"completion:submission:{data.user_id}:{res}"
-        job_status = await self.publish_message(
-            routing_key="api.completion.submission",
-            data=MessageQueueCompletionsCreate(res),
-            headers=request.headers,
-            idempotency_key=idempotency_key,
-        )
-
-        return SubmitCompletionReturnDTO(job_status, res)
+        return res
 
     def build_completion_patch_query(self, patch: CompletionPatchDTO) -> tuple[str, list[Any]]:
         """Build a dynamic SQL UPDATE query for patching a completion.

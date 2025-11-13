@@ -1,11 +1,14 @@
+import base64
 from logging import getLogger
 from typing import Literal
 
+import aiohttp
 from genjipk_sdk.models import (
     CompletionCreateDTO,
     CompletionPatchDTO,
     CompletionReadDTO,
     CompletionSubmissionReadDTO,
+    MessageQueueCompletionsCreate,
 )
 from genjipk_sdk.models.completions import (
     CompletionVerificationPutDTO,
@@ -23,7 +26,7 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
-from di import CompletionsService, provide_completions_service
+from di import CompletionsService, provide_completions_service, provide_user_service
 from utilities.errors import CustomHTTPException
 
 log = getLogger(__name__)
@@ -34,7 +37,7 @@ class CompletionsController(Controller):
 
     tags = ["Completions"]
     path = "/completions"
-    dependencies = {"svc": Provide(provide_completions_service)}
+    dependencies = {"svc": Provide(provide_completions_service), "users": Provide(provide_user_service)}
 
     @get(
         path="/",
@@ -104,7 +107,25 @@ class CompletionsController(Controller):
             int: ID of the newly inserted completion.
 
         """
-        return await svc.submit_completion(request, data)
+        completion_id = await svc.submit_completion(data)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(data.screenshot) as resp:
+                resp.raise_for_status()
+                screenshot_data = await resp.read()  # read raw bytes
+                b64_str = base64.b64encode(screenshot_data).decode("utf-8")
+            async with session.get("http://genjishimada-ocr-dev:8000/extract", data={"image_b64": b64_str}):
+                resp.raise_for_status()
+                ocr_data = await resp.read()
+        log.info(ocr_data)
+        idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
+        job_status = await svc.publish_message(
+            routing_key="api.completion.submission",
+            data=MessageQueueCompletionsCreate(completion_id),
+            headers=request.headers,
+            idempotency_key=idempotency_key,
+        )
+        return SubmitCompletionReturnDTO(job_status, completion_id)
 
     @patch(
         path="/{record_id:int}",
