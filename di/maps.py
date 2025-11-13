@@ -619,6 +619,7 @@ ORDER BY raw_difficulty
             self._params.append(limit)
             self._params.append(offset)
         query = self._generate_full_query(columns, ctes, where_clauses)
+        print(query)
         return QueryWithArgs(query, self._params)
 
 
