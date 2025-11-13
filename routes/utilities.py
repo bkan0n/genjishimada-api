@@ -3,7 +3,7 @@ import hmac
 import os
 from datetime import datetime
 from logging import getLogger
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 import msgspec
 from asyncpg import Connection
@@ -16,6 +16,7 @@ from litestar.di import Provide
 from litestar.enums import RequestEncodingType
 from litestar.params import Body
 
+from di import AutocompleteService, provide_autocomplete_service
 from di.image_storage import ImageStorageService, provide_image_storage_service
 
 log = getLogger(__name__)
@@ -23,6 +24,8 @@ log = getLogger(__name__)
 
 class UtilitiesController(Controller):
     path = "/utilities"
+
+    dependencies = {"autocomplete": Provide(provide_autocomplete_service)}
 
     @post(
         path="/image",
@@ -58,11 +61,13 @@ class UtilitiesController(Controller):
         summary="Autocomplete Map Names",
         description="Return a list of map names ordered by text similarity to the provided search string.",
     )
-    async def get_similar_map_names(self, conn: Connection, search: str, limit: int = 5) -> list[OverwatchMap] | None:
+    async def get_similar_map_names(
+        self, autocomplete: AutocompleteService, search: str, limit: int = 5
+    ) -> list[OverwatchMap] | None:
         """Get similar map names.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): The input string to compare.
             limit (int, optional): Maximum number of results. Defaults to 5.
 
@@ -70,11 +75,7 @@ class UtilitiesController(Controller):
             list[OverwatchMap] | None: A list of matching map names or `None` if no matches found.
 
         """
-        query = "SELECT name FROM maps.names ORDER BY similarity(name, $1::text) DESC LIMIT $2;"
-        res = await conn.fetch(query, search, limit)
-        if not res:
-            return None
-        return [r["name"] for r in res]
+        return await autocomplete.get_similar_map_names(search, limit)
 
     @get(
         path="/transformers/names",
@@ -83,22 +84,18 @@ class UtilitiesController(Controller):
         summary="Transform Map Name",
         description="Transform a free-form input string into the closest matching OverwatchMap name.",
     )
-    async def transform_map_names(self, conn: Connection, search: str) -> OverwatchMap | None:
+    async def transform_map_names(self, autocomplete: AutocompleteService, search: str) -> OverwatchMap | None:
         """Transform a map name into an OverwatchMap.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to transform.
 
         Returns:
             OverwatchMap | None: The closest matching map name, or `None` if no matches found.
 
         """
-        query = "SELECT name FROM maps.names ORDER BY similarity(name, $1::text) DESC LIMIT 1;"
-        res = cast("OverwatchMap", await conn.fetchval(query, search))
-        if res is None:
-            return None
-        return f'"{res}"'  # type: ignore
+        return await autocomplete.transform_map_names(search)
 
     @get(
         path="/autocomplete/restrictions",
@@ -108,14 +105,14 @@ class UtilitiesController(Controller):
     )
     async def get_similar_map_restrictions(
         self,
-        conn: Connection,
+        autocomplete: AutocompleteService,
         search: str,
         limit: int = 5,
     ) -> list[Restrictions] | None:
         """Get similar map restrictions.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to compare.
             limit (int, optional): Maximum number of results. Defaults to 5.
 
@@ -123,11 +120,7 @@ class UtilitiesController(Controller):
             list[Restrictions] | None: Matching restriction names, or `None` if none found.
 
         """
-        query = "SELECT name FROM maps.restrictions ORDER BY similarity(name, $1::text) DESC LIMIT $2;"
-        res = await conn.fetch(query, search, limit)
-        if not res:
-            return None
-        return [r["name"] for r in res]
+        return await autocomplete.get_similar_map_restrictions(search, limit)
 
     @get(
         path="/transformers/restrictions",
@@ -136,22 +129,18 @@ class UtilitiesController(Controller):
         summary="Transform Map Restriction",
         description="Transform a free-form input string into the closest matching map restriction.",
     )
-    async def transform_map_restrictions(self, conn: Connection, search: str) -> OverwatchMap | None:
+    async def transform_map_restrictions(self, autocomplete: AutocompleteService, search: str) -> OverwatchMap | None:
         """Transform a map name into a Restriction.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to transform.
 
         Returns:
             Restrictions | None: The closest matching restriction, or `None` if none found.
 
         """
-        query = "SELECT name FROM maps.restrictions ORDER BY similarity(name, $1::text) DESC LIMIT 1;"
-        res = cast("Restrictions", await conn.fetchval(query, search))
-        if res is None:
-            return None
-        return f'"{res}"'  # type: ignore
+        return await autocomplete.transform_map_restrictions(search)
 
     @get(
         path="/autocomplete/mechanics",
@@ -159,11 +148,13 @@ class UtilitiesController(Controller):
         summary="Autocomplete Map Mechanics",
         description="Return a list of mechanics ordered by similarity to the provided search string.",
     )
-    async def get_similar_map_mechanics(self, conn: Connection, search: str, limit: int = 5) -> list[Mechanics] | None:
+    async def get_similar_map_mechanics(
+        self, autocomplete: AutocompleteService, search: str, limit: int = 5
+    ) -> list[Mechanics] | None:
         """Get similar map mechanics.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to compare.
             limit (int, optional): Maximum number of results. Defaults to 5.
 
@@ -171,11 +162,7 @@ class UtilitiesController(Controller):
             list[Mechanics] | None: Matching mechanics, or `None` if none found.
 
         """
-        query = "SELECT name FROM maps.mechanics ORDER BY similarity(name, $1::text) DESC LIMIT $2;"
-        res = await conn.fetch(query, search, limit)
-        if not res:
-            return None
-        return [r["name"] for r in res]
+        return await autocomplete.get_similar_map_mechanics(search, limit)
 
     @get(
         path="/transformers/mechanics",
@@ -184,22 +171,18 @@ class UtilitiesController(Controller):
         summary="Transform Map Mechanic",
         description="Transform a free-form input string into the closest matching map mechanic.",
     )
-    async def transform_map_mechanics(self, conn: Connection, search: str) -> Mechanics | None:
+    async def transform_map_mechanics(self, autocomplete: AutocompleteService, search: str) -> Mechanics | None:
         """Transform a map name into a Mechanic.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to transform.
 
         Returns:
             Mechanics | None: The closest matching mechanic, or `None` if none found.
 
         """
-        query = "SELECT name FROM maps.mechanics ORDER BY similarity(name, $1::text) DESC LIMIT 1;"
-        res = cast("Mechanics", await conn.fetchval(query, search))
-        if res is None:
-            return None
-        return f'"{res}"'  # type: ignore
+        return await autocomplete.transform_map_mechanics(search)
 
     @get(
         path="/autocomplete/codes",
@@ -212,7 +195,7 @@ class UtilitiesController(Controller):
     )
     async def get_similar_map_codes(  # noqa: PLR0913
         self,
-        conn: Connection,
+        autocomplete: AutocompleteService,
         search: str,
         archived: bool | None = None,
         hidden: bool | None = None,
@@ -222,7 +205,7 @@ class UtilitiesController(Controller):
         """Get similar map codes.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to compare.
             archived (bool | None, optional): Filter by archived flag, or `None` for no filter.
             hidden (bool | None, optional): Filter by hidden flag, or `None` for no filter.
@@ -233,24 +216,7 @@ class UtilitiesController(Controller):
             list[OverwatchCode] | None: Matching map codes, or `None` if none found.
 
         """
-        query = """
-            SELECT code FROM core.maps
-            WHERE ($2::bool IS NULL OR archived = $2) AND
-            ($3::bool IS NULL OR hidden = $3) AND
-            ($4::playtest_status IS NULL OR playtesting = $4)
-            ORDER BY
-                CASE
-                    WHEN code = $1::text THEN 3
-                    WHEN code ILIKE $1::text || '%' THEN 2
-                    ELSE similarity(code, $1::text)
-                END DESC
-            LIMIT $5;
-        """
-
-        res = await conn.fetch(query, search, archived, hidden, playtesting, limit)
-        if not res:
-            return None
-        return [r["code"] for r in res]
+        return await autocomplete.get_similar_map_codes(search, archived, hidden, playtesting, limit)
 
     @get(
         path="/transformers/codes",
@@ -264,7 +230,7 @@ class UtilitiesController(Controller):
     )
     async def transform_map_codes(
         self,
-        conn: Connection,
+        autocomplete: AutocompleteService,
         search: str,
         archived: bool | None = None,
         hidden: bool | None = None,
@@ -273,7 +239,7 @@ class UtilitiesController(Controller):
         """Transform a map name into a code.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to transform.
             archived (bool | None, optional): Filter by archived flag, or `None` for no filter.
             hidden (bool | None, optional): Filter by hidden flag, or `None` for no filter.
@@ -283,24 +249,7 @@ class UtilitiesController(Controller):
             OverwatchCode | None: The closest matching map code, or `None` if none found.
 
         """
-        query = """
-            SELECT code FROM core.maps
-            WHERE ($2::bool IS NULL OR archived = $2) AND
-            ($3::bool IS NULL OR hidden = $3) AND
-            ($4::playtest_status IS NULL OR playtesting = $4)
-            ORDER BY
-                CASE
-                    WHEN code = $1::text THEN 3
-                    WHEN code ILIKE $1::text || '%' THEN 2
-                    ELSE similarity(code, $1::text)
-                END DESC
-            LIMIT 1;
-        """
-
-        res = cast("OverwatchCode", await conn.fetchval(query, search, archived, hidden, playtesting))
-        if res is None:
-            return None
-        return f'"{res}"'  # type: ignore
+        return await autocomplete.transform_map_codes(search, archived, hidden, playtesting)
 
     @get(
         path="/autocomplete/users",
@@ -313,7 +262,7 @@ class UtilitiesController(Controller):
     )
     async def get_similar_users(
         self,
-        conn: Connection,
+        autocomplete: AutocompleteService,
         search: str,
         limit: int = 10,
         fake_users_only: bool = False,
@@ -321,7 +270,7 @@ class UtilitiesController(Controller):
         """Get similar users by nickname, global name, or Overwatch username.
 
         Args:
-            conn (Connection): Database connection.
+            autocomplete (AutocompleteService): Autocomplete and transform service.
             search (str): Input string to compare.
             limit (int, optional): Maximum number of results. Defaults to 10.
             fake_users_only (bool): Filter out actualy discord users and display fake members only.
@@ -330,56 +279,7 @@ class UtilitiesController(Controller):
             list[tuple[int, str]] | None: A list of `(user_id, display_name)` tuples, or `None` if no matches found.
 
         """
-        query = """
-        WITH matches AS (
-            SELECT u.id AS user_id, name, similarity(name, $1) AS sim
-            FROM core.users u
-            CROSS JOIN LATERAL (
-                VALUES (u.nickname), (u.global_name)
-            ) AS name_list(name)
-            WHERE $3 IS FALSE OR id < 10000000000000
-
-            UNION ALL
-
-            SELECT o.user_id, o.username AS name, similarity(o.username, $1) AS sim
-            FROM users.overwatch_usernames o
-            WHERE $3 IS FALSE OR user_id < 10000000000000
-        ),
-        ranked_users AS (
-            SELECT user_id, MAX(sim) AS sim
-            FROM matches
-            GROUP BY user_id
-            ORDER BY sim DESC
-            LIMIT $2
-        ),
-        user_names AS (
-            SELECT
-                u.id AS user_id,
-                ARRAY_REMOVE(
-                    ARRAY[u.nickname, u.global_name] || ARRAY_AGG(owu.username),
-                    NULL
-                ) AS all_usernames
-            FROM ranked_users ru
-            JOIN core.users u ON u.id = ru.user_id
-            LEFT JOIN users.overwatch_usernames owu ON owu.user_id = u.id
-            GROUP BY u.id, u.nickname, u.global_name, ru.sim
-            ORDER BY ru.sim DESC
-        )
-        SELECT
-            user_id,
-            CASE
-                WHEN array_length(all_usernames, 1) = 1 THEN all_usernames[1]
-                ELSE
-                    all_usernames[1] || ' (' ||
-                    array_to_string(
-                        ARRAY(SELECT DISTINCT unnest(all_usernames[2:array_length(all_usernames, 1)])), ', ') || ')'
-            END AS name
-        FROM user_names;
-        """
-        res = await conn.fetch(query, search, limit, fake_users_only)
-        if not res:
-            return None
-        return [(r["user_id"], r["name"]) for r in res]
+        return await autocomplete.get_similar_users(search, limit, fake_users_only)
 
     @post(path="/log", include_in_schema=False)
     async def log_analytics(self, conn: Connection, data: LogCreateDTO) -> None:

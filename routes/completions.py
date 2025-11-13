@@ -1,3 +1,4 @@
+import asyncio
 from logging import getLogger
 from typing import Literal
 
@@ -12,6 +13,8 @@ from genjipk_sdk.models import (
 )
 from genjipk_sdk.models.completions import (
     CompletionVerificationPutDTO,
+    FailedAutoverifyMessage,
+    OcrApiResponse,
     PendingVerification,
     QualityUpdateDTO,
     SuspiciousCompletionReadDTO,
@@ -26,47 +29,30 @@ from litestar.datastructures import State
 from litestar.di import Provide
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
-from di import CompletionsService, UserService, provide_completions_service, provide_user_service
+from di import (
+    AutocompleteService,
+    CompletionsService,
+    provide_autocomplete_service,
+    provide_completions_service,
+    provide_user_service,
+)
 from utilities.errors import CustomHTTPException
 
 log = getLogger(__name__)
 
 
-def to_camel(name: str) -> str:
-    parts = name.split("_")
-    return parts[0] + "".join(p.title() for p in parts[1:])
-
-
-class CamelConfig(msgspec.Struct, rename=to_camel):
-    """Base struct that renames fields to camelCase during encoding/decoding."""
-
-
-class ExtractedTexts(CamelConfig):
-    top_left: str | None
-    top_left_white: str | None
-    top_left_cyan: str | None
-    banner: str | None
-    top_right: str | None
-    bottom_left: str | None
-
-
-class ExtractedResult(CamelConfig):
-    name: str | None
-    time: float | None
-    code: str | None
-    texts: ExtractedTexts
-
-
-class OcrApiResponse(CamelConfig):
-    extracted: ExtractedResult
-
-
 class CompletionsController(Controller):
     """Completions."""
 
+    _tasks = set()
+
     tags = ["Completions"]
     path = "/completions"
-    dependencies = {"svc": Provide(provide_completions_service), "users": Provide(provide_user_service)}
+    dependencies = {
+        "svc": Provide(provide_completions_service),
+        "users": Provide(provide_user_service),
+        "autocomplete": Provide(provide_autocomplete_service),
+    }
 
     @get(
         path="/",
@@ -124,7 +110,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         data: CompletionCreateDTO,
-        users: UserService,
+        autocomplete: AutocompleteService,
     ) -> SubmitCompletionReturnDTO:
         """Submit a new completion.
 
@@ -139,39 +125,19 @@ class CompletionsController(Controller):
         """
         completion_id = await svc.submit_completion(data)
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.post("http://genjishimada-ocr-dev:8000/extract", json={"image_url": data.screenshot}) as resp,
-        ):
-            resp.raise_for_status()
-            raw_ocr_data = await resp.read()
-            ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrApiResponse)
-
-        extracted = ocr_data.extracted
-        user_data = await users.get_user(data.user_id)
-        assert user_data
-        all_names = {
-            user_data.global_name,
-            user_data.nickname,
-            *(user_data.overwatch_usernames if user_data.overwatch_usernames else ()),
-        }
-        if data.code == extracted.code and data.time == extracted.time and extracted.name in all_names:
-            verification_data = CompletionVerificationPutDTO(
-                verified_by=969632729643753482,
-                verified=True,
-                reason="Auto Approved by Genji Shimada.",
+        task = asyncio.create_task(
+            _attempt_auto_verify(
+                request=request,
+                svc=svc,
+                autocomplete=autocomplete,
+                completion_id=completion_id,
+                data=data,
             )
-            job_status = await svc.verify_completion(request, completion_id, verification_data)
-            return SubmitCompletionReturnDTO(job_status, completion_id)
-
-        idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
-        job_status = await svc.publish_message(
-            routing_key="api.completion.submission",
-            data=MessageQueueCompletionsCreate(completion_id),
-            headers=request.headers,
-            idempotency_key=idempotency_key,
         )
-        return SubmitCompletionReturnDTO(job_status, completion_id)
+        self._tasks.add(task)
+        task.add_done_callback(lambda t: self._tasks.remove(t))
+
+        return SubmitCompletionReturnDTO(None, completion_id)
 
     @patch(
         path="/{record_id:int}",
@@ -432,3 +398,55 @@ class CompletionsController(Controller):
     @get(path="/upvoting/{message_id:int}")
     async def get_upvotes_from_message_id(self, svc: CompletionsService, message_id: int) -> int:
         return await svc.get_upvotes_from_message_id(message_id)
+
+
+async def _attempt_auto_verify(
+    request: Request,
+    svc: CompletionsService,
+    autocomplete: AutocompleteService,
+    completion_id: int,
+    data: CompletionCreateDTO,
+) -> None:
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post("http://genjishimada-ocr-dev:8000/extract", json={"image_url": data.screenshot}) as resp,
+    ):
+        resp.raise_for_status()
+        raw_ocr_data = await resp.read()
+        ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrApiResponse)
+
+    extracted = ocr_data.extracted
+    extracted_user_cleaned = await autocomplete.get_similar_users(extracted.name or "", use_pool=True)
+    extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
+    if extracted_code_cleaned:
+        extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
+    if (
+        data.code == extracted_code_cleaned
+        and data.time == extracted.time
+        and (extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)
+    ):
+        verification_data = CompletionVerificationPutDTO(
+            verified_by=969632729643753482,
+            verified=True,
+            reason="Auto Verified by Genji Shimada.",
+        )
+        await svc.verify_completion(request, completion_id, verification_data, use_pool=True)
+        return
+
+    await svc.publish_message(
+        routing_key="api.completion.autoverification.failed",
+        data=FailedAutoverifyMessage(data.code, data.time, data.user_id, extracted),
+        headers=request.headers,
+        idempotency_key=None,
+        use_pool=True,
+    )
+
+    idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
+    await svc.publish_message(
+        routing_key="api.completion.submission",
+        data=MessageQueueCompletionsCreate(completion_id),
+        headers=request.headers,
+        idempotency_key=idempotency_key,
+        use_pool=True,
+    )
+    return

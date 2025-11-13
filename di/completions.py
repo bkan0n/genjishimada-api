@@ -496,6 +496,7 @@ class CompletionsService(BaseService):
         request: Request,
         record_id: int,
         data: CompletionVerificationPutDTO,
+        use_pool: bool = False,
     ) -> JobStatus:
         """Update verification status for a completion and publish an event.
 
@@ -506,7 +507,11 @@ class CompletionsService(BaseService):
 
         """
         query = "UPDATE core.completions SET verified=$2, verified_by=$3, reason=$4 WHERE id=$1;"
-        await self._conn.execute(query, record_id, data.verified, data.verified_by, data.reason)
+        if use_pool:
+            async with self._pool.acquire() as conn:
+                await conn.execute(query, record_id, data.verified, data.verified_by, data.reason)
+        else:
+            await self._conn.execute(query, record_id, data.verified, data.verified_by, data.reason)
         message_data = MessageQueueVerificationChange(
             completion_id=record_id,
             verified=data.verified,
@@ -519,6 +524,7 @@ class CompletionsService(BaseService):
             data=message_data,
             headers=request.headers,
             idempotency_key=idempotency_key,
+            use_pool=True,
         )
         return job_status
 

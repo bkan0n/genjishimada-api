@@ -22,6 +22,7 @@ IGNORE_IDEMPOTENCY = {
     "api.playtest.vote.cast",
     "api.playtest.vote.remove",
     "api.xp.grant",
+    "api.completion.autoverification.failed",
 }
 
 
@@ -37,6 +38,7 @@ class BaseService:
         self._conn = conn
         self._pool = state.db_pool
         self._state = state
+        self._tasks = set()
 
     async def publish_message(
         self,
