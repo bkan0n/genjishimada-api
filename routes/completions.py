@@ -145,7 +145,7 @@ class CompletionsController(Controller):
         ):
             resp.raise_for_status()
             raw_ocr_data = await resp.read()
-            ocr_data = msgspec.convert(raw_ocr_data, OcrApiResponse)
+            ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrApiResponse)
 
         extracted = ocr_data.extracted
         user_data = await users.get_user(data.user_id)
