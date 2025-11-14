@@ -431,6 +431,15 @@ async def _attempt_auto_verify(
     extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
     if extracted_code_cleaned:
         extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
+    log.debug(f"extracted: {extracted}")
+    log.debug(f"data: {data}")
+    log.debug(f"extracted_code_cleaned: {extracted_code_cleaned}")
+    log.debug(f"data.code == extracted_code_cleaned: {data.code == extracted_code_cleaned}")
+    log.debug(f"data.time == extracted.time: {data.time == extracted.time}")
+    log.debug(
+        f"(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id): "
+        f"{(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)}"
+    )
     if (
         data.code == extracted_code_cleaned
         and data.time == extracted.time
