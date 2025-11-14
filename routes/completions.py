@@ -440,6 +440,12 @@ async def _attempt_auto_verify(
         f"(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id): "
         f"{(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)}"
     )
+    log.info(f"extracted_user_cleaned: {extracted_user_cleaned}")
+    if extracted_user_cleaned:
+        log.info(f"extracted_user_cleaned[0][0]: {extracted_user_cleaned[0][0]}")
+    else:
+        log.info("Doesnt exist??")
+    log.info(f"{data.user_id}")
     if (
         data.code == extracted_code_cleaned
         and data.time == extracted.time
