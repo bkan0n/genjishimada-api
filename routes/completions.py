@@ -125,19 +125,30 @@ class CompletionsController(Controller):
         """
         completion_id = await svc.submit_completion(data)
 
-        task = asyncio.create_task(
-            _attempt_auto_verify(
-                request=request,
-                svc=svc,
-                autocomplete=autocomplete,
-                completion_id=completion_id,
-                data=data,
+        if not data.video:
+            task = asyncio.create_task(
+                _attempt_auto_verify(
+                    request=request,
+                    svc=svc,
+                    autocomplete=autocomplete,
+                    completion_id=completion_id,
+                    data=data,
+                )
             )
-        )
-        self._tasks.add(task)
-        task.add_done_callback(lambda t: self._tasks.remove(t))
+            self._tasks.add(task)
+            task.add_done_callback(lambda t: self._tasks.remove(t))
 
-        return SubmitCompletionReturnDTO(None, completion_id)
+            return SubmitCompletionReturnDTO(None, completion_id)
+
+        idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
+        job_status = await svc.publish_message(
+            routing_key="api.completion.submission",
+            data=MessageQueueCompletionsCreate(completion_id),
+            headers=request.headers,
+            idempotency_key=idempotency_key,
+            use_pool=True,
+        )
+        return SubmitCompletionReturnDTO(job_status, completion_id)
 
     @patch(
         path="/{record_id:int}",
@@ -420,6 +431,21 @@ async def _attempt_auto_verify(
     extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
     if extracted_code_cleaned:
         extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
+    log.info(f"extracted: {extracted}")
+    log.info(f"data: {data}")
+    log.info(f"extracted_code_cleaned: {extracted_code_cleaned}")
+    log.info(f"data.code == extracted_code_cleaned: {data.code == extracted_code_cleaned}")
+    log.info(f"data.time == extracted.time: {data.time == extracted.time}")
+    log.info(
+        f"(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id): "
+        f"{(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)}"
+    )
+    log.info(f"extracted_user_cleaned: {extracted_user_cleaned}")
+    if extracted_user_cleaned:
+        log.info(f"extracted_user_cleaned[0][0]: {extracted_user_cleaned[0][0]}")
+    else:
+        log.info("Doesnt exist??")
+    log.info(f"{data.user_id}")
     if (
         data.code == extracted_code_cleaned
         and data.time == extracted.time

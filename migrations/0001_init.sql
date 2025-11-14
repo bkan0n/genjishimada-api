@@ -476,7 +476,7 @@ BEGIN
   END IF;
 
   -- Serialize per (user,map) to avoid racey double-inserts/updates.
-  PERFORM pg_advisory_xact_lock((NEW.user_id::bigint << 32) | NEW.map_id::bigint);
+  -- PERFORM pg_advisory_xact_lock((NEW.user_id::bigint << 32) | NEW.map_id::bigint);
 
   -- Find the best non-legacy run for this user/map.
   SELECT c.time, c.completion, c.inserted_at, m.code

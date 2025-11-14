@@ -53,7 +53,7 @@ from litestar.response import Response, Stream
 from litestar.status_codes import HTTP_200_OK, HTTP_400_BAD_REQUEST
 
 from di.jobs import InternalJobsService, provide_internal_jobs_service
-from di.maps import CompletionFilter, MapSearchFilters, MapService, MedalFilter, provide_map_service
+from di.maps import CompletionFilter, MapSearchFilters, MapService, MedalFilter, PlaytestFilter, provide_map_service
 from di.newsfeed import NewsfeedService, provide_newsfeed_service
 from di.users import UserService, provide_user_service
 from utilities.errors import CustomHTTPException
@@ -300,6 +300,7 @@ class BaseMapsController(litestar.Controller):
         user_id: int | None = None,
         completion_filter: CompletionFilter = "All",
         finalized_playtests: bool | None = None,
+        playtest_filter: PlaytestFilter = "All",
         return_all: bool = False,
         page_size: Literal[10, 20, 25, 50, 12] = 10,
         page_number: int = 1,
@@ -355,6 +356,7 @@ class BaseMapsController(litestar.Controller):
             finalized_playtests=finalized_playtests,
             minimum_quality=minimum_quality,
             medal_filter=medal_filter,
+            playtest_filter=playtest_filter,
             user_id=user_id,
             completion_filter=completion_filter,
             page_size=page_size,
