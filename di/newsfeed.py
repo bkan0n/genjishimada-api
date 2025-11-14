@@ -104,7 +104,7 @@ class NewsfeedService(BaseService):
 
         if not rows:
             return None
-        log.info(rows)
+        log.debug(rows)
         return msgspec.convert(rows, list[NewsfeedEvent])
 
 

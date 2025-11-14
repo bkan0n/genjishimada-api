@@ -172,7 +172,7 @@ class UsersController(litestar.Controller):
 
         """
         try:
-            log.info("Set Overwatch usernames for user %s: %s", user_id, data.usernames)
+            log.debug("Set Overwatch usernames for user %s: %s", user_id, data.usernames)
             await svc.set_overwatch_usernames(user_id, data.usernames)
             return Response({"success": True}, status_code=HTTP_200_OK)
         except Exception as e:

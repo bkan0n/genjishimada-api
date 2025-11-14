@@ -431,21 +431,21 @@ async def _attempt_auto_verify(
     extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
     if extracted_code_cleaned:
         extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
-    log.info(f"extracted: {extracted}")
-    log.info(f"data: {data}")
-    log.info(f"extracted_code_cleaned: {extracted_code_cleaned}")
-    log.info(f"data.code == extracted_code_cleaned: {data.code == extracted_code_cleaned}")
-    log.info(f"data.time == extracted.time: {data.time == extracted.time}")
-    log.info(
+    log.debug(f"extracted: {extracted}")
+    log.debug(f"data: {data}")
+    log.debug(f"extracted_code_cleaned: {extracted_code_cleaned}")
+    log.debug(f"data.code == extracted_code_cleaned: {data.code == extracted_code_cleaned}")
+    log.debug(f"data.time == extracted.time: {data.time == extracted.time}")
+    log.debug(
         f"(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id): "
         f"{(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)}"
     )
-    log.info(f"extracted_user_cleaned: {extracted_user_cleaned}")
+    log.debug(f"extracted_user_cleaned: {extracted_user_cleaned}")
     if extracted_user_cleaned:
-        log.info(f"extracted_user_cleaned[0][0]: {extracted_user_cleaned[0][0]}")
+        log.debug(f"extracted_user_cleaned[0][0]: {extracted_user_cleaned[0][0]}")
     else:
-        log.info("Doesnt exist??")
-    log.info(f"{data.user_id}")
+        log.debug("Doesnt exist??")
+    log.debug(f"{data.user_id}")
     if (
         data.code == extracted_code_cleaned
         and data.time == extracted.time

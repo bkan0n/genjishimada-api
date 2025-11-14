@@ -1360,7 +1360,7 @@ class MapService(BaseService):
         WHERE $2::bool IS TRUE;
         """
         res = await self._conn.fetch(query, code, include_records)
-        log.info(res)
+        log.debug(res)
         return msgspec.convert(res, list[GuideFull])
 
     async def delete_guide(self, code: OverwatchCode, user_id: int) -> None:
