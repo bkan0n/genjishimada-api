@@ -58,6 +58,8 @@ async def rabbitmq_connection(_app: Litestar) -> AsyncGenerator[None, None]:
 def default_exception_handler(_: Request, exc: Exception) -> Response:
     """Handle errors."""
     status_code = getattr(exc, "status_code", HTTP_500_INTERNAL_SERVER_ERROR)
+    if status_code == HTTP_500_INTERNAL_SERVER_ERROR:
+        log.error("500: \n", exc_info=exc)
     detail = getattr(exc, "detail", "")
     extra = getattr(exc, "extra", {})
     return Response(content={"error": detail, "extra": extra}, status_code=status_code)
