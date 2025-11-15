@@ -176,7 +176,7 @@ class DifficultyRadarPlotter:
 
 async def build_playtest_plot(vote_counts: dict[DifficultyAll, int]) -> BytesIO:
     """Build a playtest plot."""
-    plotter = DifficultyRadarPlotter(vote_counts)
+    plotter = DifficultyRadarPlotter(vote_counts, min_visible=6)
     fig = await asyncio.to_thread(plotter.plot_difficulty_radar)
     buffer = BytesIO()
     fig.write_image(file=buffer, format="png")
