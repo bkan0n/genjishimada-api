@@ -2037,6 +2037,7 @@ class MapService(BaseService):
         """
         official_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=official_code))
         unofficial_map = await self.fetch_maps(single=True, filters=MapSearchFilters(code=unofficial_code))
+
         if not official_map or not unofficial_map:
             raise CustomHTTPException(
                 detail=(
@@ -2046,6 +2047,13 @@ class MapService(BaseService):
                 ),
                 status_code=HTTP_400_BAD_REQUEST,
             )
+
+        if unofficial_map.official:
+            raise CustomHTTPException(
+                detail="You cannot link two official maps.",
+                status_code=HTTP_400_BAD_REQUEST,
+            )
+
         if not official_map.linked_code or not unofficial_map.linked_code:
             raise CustomHTTPException(
                 detail=(
