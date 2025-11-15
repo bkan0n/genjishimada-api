@@ -10,7 +10,7 @@ from aio_pika.abc import AbstractRobustConnection
 from aio_pika.pool import Pool
 from asyncpg import Connection
 from litestar import Litestar, Request, Response, get
-from litestar.exceptions import HTTPException, ValidationException
+from litestar.exceptions import HTTPException
 from litestar.logging.config import LoggingConfig
 from litestar.middleware import DefineMiddleware
 from litestar.openapi.config import OpenAPIConfig
@@ -19,7 +19,6 @@ from litestar.openapi.spec import Server
 from litestar.static_files.config import create_static_files_router
 from litestar.status_codes import HTTP_500_INTERNAL_SERVER_ERROR, HTTP_503_SERVICE_UNAVAILABLE
 from litestar_asyncpg import AsyncpgConfig, AsyncpgConnection, AsyncpgPlugin, PoolConfig
-from msgspec import ValidationError
 
 from middleware.auth import CustomAuthenticationMiddleware
 from routes import route_handlers
@@ -32,6 +31,13 @@ RABBITMQ_PASS = os.getenv("RABBITMQ_PASS")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST")
 
 log = logging.getLogger(__name__)
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
+log.info(f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASS}@{RABBITMQ_HOST}/")
 
 
 @asynccontextmanager
@@ -147,7 +153,7 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
         root={"level": "INFO", "handlers": ["queue_listener"]},
         formatters={"standard": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}},
         log_exceptions="always",
-        disable_stack_trace={404, ValidationError, ValidationException, CustomHTTPException},
+        # disable_stack_trace={404, ValidationError, ValidationException, CustomHTTPException},
     )
 
     auth_middleware = DefineMiddleware(CustomAuthenticationMiddleware, exclude=["docs"])
