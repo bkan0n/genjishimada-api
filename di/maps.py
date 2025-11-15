@@ -520,7 +520,7 @@ SELECT
     CASE WHEN playtesting::text = 'In Progress' and pm.thread_id IS NOT NULL
     THEN
     jsonb_build_object(
-        'thread_id', pm.thread_id::text,
+        'thread_id', pm.thread_id,
         'initial_difficulty', pm.initial_difficulty,
         'verification_id', pm.verification_id,
         'completed', pm.completed,
