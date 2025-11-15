@@ -465,8 +465,9 @@ class CommunityService(BaseService):
                 em.base_difficulty,
                 AVG(mr.quality) AS quality
             FROM eligible_maps em
-            LEFT JOIN maps.ratings mr ON mr.map_id = em.id
-            WHERE mr.verified
+            LEFT JOIN maps.ratings mr
+              ON mr.map_id = em.id
+             AND mr.verified
             GROUP BY em.id, code, em.base_difficulty
         ),
         map_data AS (
@@ -495,7 +496,12 @@ class CommunityService(BaseService):
                     ) AS pos
             FROM map_data md
         )
-        SELECT code, completions, quality, difficulty, pos AS ranking
+        SELECT
+            code,
+            completions,
+            ROUND(COALESCE(quality, 0), 2) AS quality,   -- <-- changed
+            difficulty,
+            pos AS ranking
         FROM ranked_maps
         WHERE pos <= 5
         ORDER BY
