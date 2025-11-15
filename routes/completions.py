@@ -419,7 +419,7 @@ async def _attempt_auto_verify(
     completion_id: int,
     data: CompletionCreateDTO,
 ) -> None:
-    hostname = "genjishimada-ocr" if os.getenv("BOT_ENVIRONEMENT") == "production" else "genjishimada-ocr-dev"
+    hostname = "genjishimada-ocr" if os.getenv("API_ENVIRONMENT") == "production" else "genjishimada-ocr-dev"
     async with (
         aiohttp.ClientSession() as session,
         session.post(f"http://{hostname}:8000/extract", json={"image_url": data.screenshot}) as resp,
