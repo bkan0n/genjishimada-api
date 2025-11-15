@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging import getLogger
 from typing import Literal
 
@@ -418,9 +419,10 @@ async def _attempt_auto_verify(
     completion_id: int,
     data: CompletionCreateDTO,
 ) -> None:
+    hostname = "genjishimada-ocr" if os.getenv("BOT_ENVIRONEMENT") == "production" else "genjishimada-ocr-dev"
     async with (
         aiohttp.ClientSession() as session,
-        session.post("http://genjishimada-ocr-dev:8000/extract", json={"image_url": data.screenshot}) as resp,
+        session.post(f"http://{hostname}:8000/extract", json={"image_url": data.screenshot}) as resp,
     ):
         resp.raise_for_status()
         raw_ocr_data = await resp.read()
