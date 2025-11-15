@@ -147,7 +147,6 @@ class RankCardService(BaseService):
         """
         query = "SELECT * FROM rank_card.badges WHERE user_id = $1;"
         row = await self._conn.fetchrow(query, user_id)
-        print(row)
         if not row:
             return RankCardBadgeSettings()
         row_d = {**row}

@@ -10,7 +10,7 @@ from aio_pika.abc import AbstractRobustConnection
 from aio_pika.pool import Pool
 from asyncpg import Connection
 from litestar import Litestar, Request, Response, get
-from litestar.exceptions import HTTPException
+from litestar.exceptions import HTTPException, ValidationException
 from litestar.logging.config import LoggingConfig
 from litestar.middleware import DefineMiddleware
 from litestar.openapi.config import OpenAPIConfig
@@ -19,6 +19,7 @@ from litestar.openapi.spec import Server
 from litestar.static_files.config import create_static_files_router
 from litestar.status_codes import HTTP_500_INTERNAL_SERVER_ERROR, HTTP_503_SERVICE_UNAVAILABLE
 from litestar_asyncpg import AsyncpgConfig, AsyncpgConnection, AsyncpgPlugin, PoolConfig
+from msgspec import ValidationError
 
 from middleware.auth import CustomAuthenticationMiddleware
 from routes import route_handlers
@@ -59,7 +60,6 @@ def default_exception_handler(_: Request, exc: Exception) -> Response:
     status_code = getattr(exc, "status_code", HTTP_500_INTERNAL_SERVER_ERROR)
     detail = getattr(exc, "detail", "")
     extra = getattr(exc, "extra", {})
-    print({"error": detail, "extra": extra})
     return Response(content={"error": detail, "extra": extra}, status_code=status_code)
 
 
@@ -74,6 +74,7 @@ async def _async_pg_init(conn: AsyncpgConnection) -> None:
 
 class HealthcheckEndpointFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        """Filter out healthcheck endpoint logs."""
         return record.getMessage().find("/healthcheck") == -1
 
 
@@ -137,7 +138,7 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
         root={"level": "INFO", "handlers": ["queue_listener"]},
         formatters={"standard": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}},
         log_exceptions="always",
-        # disable_stack_trace={404, ValidationError, ValidationException, CustomHTTPException},
+        disable_stack_trace={404, ValidationError, ValidationException, CustomHTTPException},
     )
 
     auth_middleware = DefineMiddleware(CustomAuthenticationMiddleware, exclude=["docs"])

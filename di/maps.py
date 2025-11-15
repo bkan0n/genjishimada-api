@@ -363,7 +363,6 @@ class MapSearchSQLBuilder:
             self._params.append(self._filters.playtesting)
 
         if self._filters.playtest_filter:
-            print(self._filters.playtest_filter)
             match self._filters.playtest_filter:
                 case "None":
                     self._where_clauses.append("pm.thread_id IS NULL")
@@ -423,9 +422,6 @@ class MapSearchSQLBuilder:
             self._where_clauses.append("pm.verification_id IS NOT NULL AND m.playtesting='In Progress'")
 
         if self._where_clauses:
-            print(self._where_clauses)
-            print(self._where_clauses)
-            print(self._where_clauses)
             joined_where_clauses = " AND ".join(self._where_clauses)
             return f"WHERE {joined_where_clauses}"
 
