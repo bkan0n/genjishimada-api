@@ -433,26 +433,21 @@ async def _attempt_auto_verify(
     extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
     if extracted_code_cleaned:
         extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
+        extracted_user_id: int | None = extracted_user_cleaned[0][0] if extracted_user_cleaned else None
+
+    # --- Compute condition flags once ---
+    code_match = data.code == extracted_code_cleaned
+    time_match = data.time == extracted.time
+    user_match = extracted_user_id == data.user_id
+
     log.debug(f"extracted: {extracted}")
     log.debug(f"data: {data}")
     log.debug(f"extracted_code_cleaned: {extracted_code_cleaned}")
-    log.debug(f"data.code == extracted_code_cleaned: {data.code == extracted_code_cleaned}")
-    log.debug(f"data.time == extracted.time: {data.time == extracted.time}")
-    log.debug(
-        f"(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id): "
-        f"{(extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)}"
-    )
-    log.debug(f"extracted_user_cleaned: {extracted_user_cleaned}")
-    if extracted_user_cleaned:
-        log.debug(f"extracted_user_cleaned[0][0]: {extracted_user_cleaned[0][0]}")
-    else:
-        log.debug("Doesnt exist??")
-    log.debug(f"{data.user_id}")
-    if (
-        data.code == extracted_code_cleaned
-        and data.time == extracted.time
-        and (extracted_user_cleaned and extracted_user_cleaned[0][0] == data.user_id)
-    ):
+    log.debug(f"code_match: {code_match} ({data.code=} vs {extracted_code_cleaned=})")
+    log.debug(f"time_match: {time_match} ({data.time=} vs {extracted.time=})")
+    log.debug(f"user_match: {user_match} ({data.user_id=} vs {extracted_user_id=})")
+
+    if code_match and time_match and user_match:
         verification_data = CompletionVerificationPutDTO(
             verified_by=969632729643753482,
             verified=True,
@@ -463,7 +458,18 @@ async def _attempt_auto_verify(
 
     await svc.publish_message(
         routing_key="api.completion.autoverification.failed",
-        data=FailedAutoverifyMessage(data.code, data.time, data.user_id, extracted),
+        data=FailedAutoverifyMessage(
+            submitted_code=data.code,
+            submitted_time=data.time,
+            user_id=data.user_id,
+            extracted=extracted,
+            code_match=code_match,
+            time_match=time_match,
+            user_match=user_match,
+            extracted_code_cleaned=extracted_code_cleaned,
+            extracted_time=extracted.time,
+            extracted_user_id=extracted_user_id,
+        ),
         headers=request.headers,
         idempotency_key=None,
         use_pool=True,
