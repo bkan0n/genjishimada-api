@@ -304,7 +304,7 @@ class MapSearchSQLBuilder:
                     "    SELECT c.map_id"
                     "    FROM core.completions c"
                     f"    WHERE c.user_id = ${next(self._counter)}"
-                    "      AND c.verified AND NOT c.legacy)"
+                    "      AND c.verified AND NOT c.legacy) "
                 )
             case "With":
                 query = f"""
@@ -312,6 +312,7 @@ class MapSearchSQLBuilder:
                     FROM core.completions
                     WHERE user_id = ${next(self._counter)}
                       AND verified AND NOT legacy
+                    GROUP BY map_id
                 """
             case _:
                 return
