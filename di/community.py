@@ -106,19 +106,19 @@ class CommunityService(BaseService):
         ), map_data AS (
             SELECT DISTINCT ON (m.id, r.user_id)
                 r.user_id,
-                difficulty
+                regexp_replace(m.difficulty, '\\s*[-+]\\s*$', '', '') AS base_difficulty
             FROM unioned_records r
             LEFT JOIN core.maps m ON r.map_id = m.id
             WHERE m.official = TRUE
         ), skill_rank_data AS (
             SELECT
-                difficulty,
+                base_difficulty AS difficulty,
                 md.user_id,
-                coalesce(sum(CASE WHEN md.difficulty IS NOT NULL THEN 1 ELSE 0 END), 0) AS completions,
-                coalesce(sum(CASE WHEN md.difficulty IS NOT NULL THEN 1 ELSE 0 END), 0) >= t.threshold AS rank_met
+                coalesce(sum(CASE WHEN md.base_difficulty IS NOT NULL THEN 1 ELSE 0 END), 0) AS completions,
+                coalesce(sum(CASE WHEN md.base_difficulty IS NOT NULL THEN 1 ELSE 0 END), 0) >= t.threshold AS rank_met
             FROM map_data md
-            LEFT JOIN thresholds t ON difficulty=t.name
-            GROUP BY difficulty,
+            LEFT JOIN thresholds t ON base_difficulty=t.name
+            GROUP BY base_difficulty,
                 t.threshold,
                 md.user_id
         ), first_rank AS (
