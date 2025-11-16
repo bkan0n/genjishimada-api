@@ -76,4 +76,4 @@ lint.ignore = [
 convention = "google"
 
 [tool.uv.sources]
-genjipk-sdk = { git = "https://github.com/bkan0n/genjipk-sdk" }
+genjipk-sdk = { git = "https://github.com/bkan0n/genjipk-sdk", rev="1ab099d03cce5d4228d2625001a9234d94a5d639" }

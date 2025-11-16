@@ -454,7 +454,7 @@ wheels = [
 [[package]]
 name = "genjipk-sdk"
 version = "0.1.0"
-source = { git = "https://github.com/bkan0n/genjipk-sdk#1ab099d03cce5d4228d2625001a9234d94a5d639" }
+source = { git = "https://github.com/bkan0n/genjipk-sdk?rev=1ab099d03cce5d4228d2625001a9234d94a5d639#1ab099d03cce5d4228d2625001a9234d94a5d639" }
 dependencies = [
     { name = "hatchling" },
     { name = "msgspec" },
@@ -497,7 +497,7 @@ requires-dist = [
     { name = "aio-pika", specifier = ">=9.5.5" },
     { name = "aiohttp", specifier = ">=3.12.14" },
     { name = "boto3", specifier = ">=1.40.25" },
-    { name = "genjipk-sdk", git = "https://github.com/bkan0n/genjipk-sdk" },
+    { name = "genjipk-sdk", git = "https://github.com/bkan0n/genjipk-sdk?rev=1ab099d03cce5d4228d2625001a9234d94a5d639" },
     { name = "kaleido", specifier = "==0.2.1" },
     { name = "litestar", extras = ["standard"], specifier = ">=2.16.0" },
     { name = "litestar-asyncpg", specifier = ">=0.4.0" },
