@@ -196,9 +196,10 @@ class CommunityService(BaseService):
             WHERE u.id > 100000
         ),
         playtest_counts AS (
-            SELECT user_id, count(*) AS amount
-            FROM playtests.votes
-            GROUP BY user_id
+            SELECT pv.user_id, count(*) + dc.count AS amount
+            FROM playtests.votes pv
+            LEFT JOIN playtests.deprecated_count dc ON pv.user_id = dc.user_id
+            GROUP BY pv.user_id, dc.count
         )
         SELECT
             u.id as user_id,
