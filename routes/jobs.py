@@ -1,8 +1,7 @@
 import uuid
 
 from asyncpg import Connection
-from genjipk_sdk.models import JobStatus, JobUpdate
-from genjipk_sdk.models.jobs import ClaimRequest, ClaimResponse
+from genjipk_sdk.internal import ClaimCreateRequest, ClaimResponse, JobStatusResponse, JobStatusUpdateRequest
 from litestar import Controller, delete, get, patch, post
 from litestar.di import Provide
 
@@ -15,17 +14,18 @@ class InternalJobsController(Controller):
     dependencies = {"svc": Provide(provide_internal_jobs_service)}
 
     @get("/jobs/{job_id:str}")
-    async def get_job(self, svc: InternalJobsService, job_id: uuid.UUID) -> JobStatus:
+    async def get_job(self, svc: InternalJobsService, job_id: uuid.UUID) -> JobStatusResponse:
         """Get job status."""
         return await svc.get_job(job_id)
 
     @patch("/jobs/{job_id:str}", include_in_schema=False)
-    async def update_job(self, svc: InternalJobsService, job_id: uuid.UUID, data: JobUpdate) -> None:
+    async def update_job(self, svc: InternalJobsService, job_id: uuid.UUID, data: JobStatusUpdateRequest) -> None:
         """Update pending job."""
         return await svc.update_job(job_id, data)
 
     @post("/idempotency/claim")
-    async def claim_idempotency(self, conn: Connection, data: ClaimRequest) -> ClaimResponse:
+    async def claim_idempotency(self, conn: Connection, data: ClaimCreateRequest) -> ClaimResponse:
+        """Claim a idempoency key."""
         tag = await conn.execute(
             """
             INSERT INTO public.processed_messages (idempotency_key)
@@ -38,7 +38,8 @@ class InternalJobsController(Controller):
         return ClaimResponse(claimed=claimed)
 
     @delete("/idempotency/claim")
-    async def delete_claimed_idempotency(self, conn: Connection, data: ClaimRequest) -> None:
+    async def delete_claimed_idempotency(self, conn: Connection, data: ClaimCreateRequest) -> None:
+        """Delete a idempoency key."""
         await conn.execute(
             """
             DELETE FROM public.processed_messages

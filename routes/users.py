@@ -4,16 +4,16 @@ import logging
 from typing import Annotated
 
 import litestar
-from genjipk_sdk.models import (
+from genjipk_sdk.users import (
     NOTIFICATION_TYPES,
-    OverwatchUsernamesReadDTO,
-    OverwatchUsernamesUpdate,
-    SettingsUpdate,
-    UserCreateDTO,
-    UserReadDTO,
-    UserUpdateDTO,
+    OverwatchUsernamesResponse,
+    OverwatchUsernamesUpdateRequest,
+    RankDetailResponse,
+    SettingsUpdateRequest,
+    UserCreateRequest,
+    UserResponse,
+    UserUpdateRequest,
 )
-from genjipk_sdk.models.users import RankDetailReadDTO
 from litestar.di import Provide
 from litestar.exceptions import HTTPException
 from litestar.params import Body
@@ -55,7 +55,7 @@ class UsersController(litestar.Controller):
         summary="Update User Names",
         description="Update the global name and nickname for a user.",
     )
-    async def update_user_names(self, user_id: int, data: UserUpdateDTO, svc: UserService) -> None:
+    async def update_user_names(self, user_id: int, data: UserUpdateRequest, svc: UserService) -> None:
         """Update user names.
 
         Args:
@@ -76,11 +76,11 @@ class UsersController(litestar.Controller):
         summary="List Users",
         description=("Fetch all users with their basic fields and aggregated Overwatch usernames."),
     )
-    async def get_users(self, svc: UserService) -> list[UserReadDTO] | None:
+    async def get_users(self, svc: UserService) -> list[UserResponse] | None:
         """Get user(s).
 
         Returns:
-            list[UserReadDTO] | None: A list of users with aggregated Overwatch usernames; `None` only if no rows.
+            list[UserResponse] | None: A list of users with aggregated Overwatch usernames; `None` only if no rows.
 
         """
         return await svc.list_users()
@@ -93,7 +93,7 @@ class UsersController(litestar.Controller):
             "and a `coalesced_name` preferring primary OW username, then nickname, then global name."
         ),
     )
-    async def get_user(self, svc: UserService, user_id: int) -> UserReadDTO | None:
+    async def get_user(self, svc: UserService, user_id: int) -> UserResponse | None:
         """Get user.
 
         Args:
@@ -101,7 +101,7 @@ class UsersController(litestar.Controller):
             user_id (int): The user ID.
 
         Returns:
-            UserReadDTO | None: The user if found; otherwise `None`.
+            UserResponse | None: The user if found; otherwise `None`.
 
         """
         return await svc.get_user(user_id)
@@ -132,15 +132,15 @@ class UsersController(litestar.Controller):
             "If the user already exists, this is a no-op. Duplicate primary keys are reported with a 400."
         ),
     )
-    async def create_user(self, svc: UserService, data: UserCreateDTO) -> UserReadDTO:
+    async def create_user(self, svc: UserService, data: UserCreateRequest) -> UserResponse:
         """Create new user.
 
         Args:
             svc (UserService): UserService DI.
-            data (UserCreateDTO): The user payload.
+            data (UserCreateRequest): The user payload.
 
         Returns:
-            UserReadDTO: The created (or existing) user with default fields.
+            UserResponse: The created (or existing) user with default fields.
 
         """
         return await svc.create_user(data)
@@ -158,14 +158,14 @@ class UsersController(litestar.Controller):
         self,
         svc: UserService,
         user_id: int,
-        data: Annotated[OverwatchUsernamesUpdate, Body(title="User Overwatch Usernames")],
+        data: Annotated[OverwatchUsernamesUpdateRequest, Body(title="User Overwatch Usernames")],
     ) -> Response:
         """Update the Overwatch usernames for a specific user.
 
         Args:
             svc (UserService): The user service.
             user_id (int): The user ID.
-            data (OverwatchUsernamesUpdate): The new usernames payload.
+            data (OverwatchUsernamesUpdateRequest): The new usernames payload.
 
         Returns:
             Response: `{"success": true}` on success; otherwise an error payload with HTTP 400.
@@ -187,7 +187,7 @@ class UsersController(litestar.Controller):
             "Includes `username` and `is_primary` fields."
         ),
     )
-    async def get_overwatch_usernames(self, svc: UserService, user_id: int) -> OverwatchUsernamesReadDTO:
+    async def get_overwatch_usernames(self, svc: UserService, user_id: int) -> OverwatchUsernamesResponse:
         """Retrieve the Overwatch usernames for a specific user.
 
         Args:
@@ -195,7 +195,7 @@ class UsersController(litestar.Controller):
             user_id (int): The user ID.
 
         Returns:
-            OverwatchUsernamesReadDTO: The user's Overwatch usernames.
+            OverwatchUsernamesResponse: The user's Overwatch usernames.
 
         """
         return await svc.get_overwatch_usernames_response(user_id)
@@ -240,7 +240,7 @@ class UsersController(litestar.Controller):
         self,
         svc: UserService,
         request: litestar.Request,
-        data: Annotated[SettingsUpdate, Body(title="User Notifications")],
+        data: Annotated[SettingsUpdateRequest, Body(title="User Notifications")],
         user_id: int,
     ) -> Response:
         """Update the settings for a specific user.
@@ -248,7 +248,7 @@ class UsersController(litestar.Controller):
         Args:
             svc (UserService): The user service.
             request (Request): The current request (checks `X-Test-Mode` header).
-            data (SettingsUpdate): The settings to apply.
+            data (SettingsUpdateRequest): The settings to apply.
             user_id (int): The user ID.
 
         Returns:
@@ -303,7 +303,7 @@ class UsersController(litestar.Controller):
             "Uses verified, latest-per-user runs and official maps only."
         ),
     )
-    async def get_user_rank_data(self, svc: UserService, user_id: int) -> list[RankDetailReadDTO]:
+    async def get_user_rank_data(self, svc: UserService, user_id: int) -> list[RankDetailResponse]:
         """Get rank details for a user.
 
         Args:
@@ -311,7 +311,7 @@ class UsersController(litestar.Controller):
             user_id (int): The user ID.
 
         Returns:
-            list[RankDetailReadDTO]: A list of rank detail rows by difficulty.
+            list[RankDetailResponse]: A list of rank detail rows by difficulty.
 
         """
         return await svc.get_user_rank_data(user_id)

@@ -1,12 +1,12 @@
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import MapMasteryData, RankDetailReadDTO
-from genjipk_sdk.utilities._types import OverwatchMap
+from genjipk_sdk.maps import MapMasteryResponse, OverwatchMap
+from genjipk_sdk.users import RankDetailResponse
 
 
 async def get_map_mastery_data(
     conn: Connection, user_id: int, map_name: OverwatchMap | None = None
-) -> list[MapMasteryData]:
+) -> list[MapMasteryResponse]:
     """Get mastery data for a user, optionally scoped to a map.
 
     Args:
@@ -15,7 +15,7 @@ async def get_map_mastery_data(
         map_name (OverwatchMap | None): Optional map filter.
 
     Returns:
-        list[MapMasteryData]: Mastery rows for the user (and map if provided).
+        list[MapMasteryResponse]: Mastery rows for the user (and map if provided).
 
     """
     query = """
@@ -42,10 +42,10 @@ async def get_map_mastery_data(
         ORDER BY amn.name;
     """
     rows = await conn.fetch(query, user_id, map_name)
-    return msgspec.convert(rows, list[MapMasteryData])
+    return msgspec.convert(rows, list[MapMasteryResponse])
 
 
-async def get_user_rank_data(conn: Connection, user_id: int) -> list[RankDetailReadDTO]:
+async def get_user_rank_data(conn: Connection, user_id: int) -> list[RankDetailResponse]:
     """Compute rank details for a user based on verified completions and medal thresholds.
 
     Args:
@@ -53,7 +53,7 @@ async def get_user_rank_data(conn: Connection, user_id: int) -> list[RankDetailR
         user_id (int): The ID of the user.
 
     Returns:
-        list[RankDetailReadDTO]: Per-difficulty counts and rank-met flags.
+        list[RankDetailResponse]: Per-difficulty counts and rank-met flags.
 
     """
     query = r"""
@@ -140,4 +140,4 @@ async def get_user_rank_data(conn: Connection, user_id: int) -> list[RankDetailR
         END;
     """
     rows = await conn.fetch(query, user_id)
-    return msgspec.convert(rows, list[RankDetailReadDTO])
+    return msgspec.convert(rows, list[RankDetailResponse])

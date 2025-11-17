@@ -1,5 +1,4 @@
-from genjipk_sdk.models import AvatarResponse, BackgroundResponse, RankCardData
-from genjipk_sdk.models.rank_card import RankCardBadgeSettings
+from genjipk_sdk.rank_card import AvatarResponse, BackgroundResponse, RankCardBadgeSettings, RankCardResponse
 from litestar import Controller, get, put
 from litestar.di import Provide
 from msgspec import Struct
@@ -30,7 +29,7 @@ class RankCardController(Controller):
         summary="Get rank card data",
         description="Return full rank card payload including rank, avatar, badges, map totals, and XP.",
     )
-    async def get_rank_card(self, svc: RankCardService, user_id: int) -> RankCardData:
+    async def get_rank_card(self, svc: RankCardService, user_id: int) -> RankCardResponse:
         """Get the full rank card payload for a user.
 
         Aggregates rank, nickname, avatar, background, badge settings, per-difficulty
@@ -41,7 +40,7 @@ class RankCardController(Controller):
             user_id (int): Target user ID from the URL path.
 
         Returns:
-            RankCardData: The complete rank card model ready for rendering.
+            RankCardResponse: The complete rank card model ready for rendering.
         """
         return await svc.fetch_rank_card_data(user_id)
 

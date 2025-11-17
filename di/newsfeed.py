@@ -4,8 +4,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING
 
 import msgspec
-from genjipk_sdk.models.jobs import CreatePublishNewsfeedReturnDTO
-from genjipk_sdk.models.newsfeed import NewsfeedEvent, NewsfeedQueueMessage
+from genjipk_sdk.newsfeed import NewsfeedDispatchEvent, NewsfeedEvent, PublishNewsfeedJobResponse
 from litestar.datastructures import Headers
 
 from di.base import BaseService
@@ -25,7 +24,7 @@ class NewsfeedService(BaseService):
         *,
         headers: Headers,
         use_pool: bool = False,
-    ) -> CreatePublishNewsfeedReturnDTO:
+    ) -> PublishNewsfeedJobResponse:
         """Insert a newsfeed event and publish its ID to Rabbit.
 
         Args:
@@ -49,12 +48,12 @@ class NewsfeedService(BaseService):
         idempotency_key = f"newsfeed:create:{new_id}"
         job_status = await self.publish_message(
             routing_key="api.newsfeed.create",
-            data=NewsfeedQueueMessage(newsfeed_id=new_id),
+            data=NewsfeedDispatchEvent(newsfeed_id=new_id),
             headers=headers,
             idempotency_key=idempotency_key,
             use_pool=use_pool,
         )
-        return CreatePublishNewsfeedReturnDTO(job_status, new_id)
+        return PublishNewsfeedJobResponse(job_status, new_id)
 
     async def get_event(self, id_: int) -> NewsfeedEvent | None:
         """Fetch a single newsfeed event by ID.

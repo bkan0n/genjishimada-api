@@ -1,11 +1,15 @@
 import litestar
-from genjipk_sdk.models import JobStatus, PlaytestAssociateIDThread, PlaytestPatchDTO, PlaytestVote, PlaytestVotesAll
-from genjipk_sdk.models.maps import (
-    PlaytestApproveCreate,
-    PlaytestForceAcceptCreate,
-    PlaytestForceDenyCreate,
-    PlaytestReadDTO,
-    PlaytestResetCreate,
+from genjipk_sdk.internal import JobStatusResponse
+from genjipk_sdk.maps import (
+    PlaytestApproveRequest,
+    PlaytestForceAcceptRequest,
+    PlaytestForceDenyRequest,
+    PlaytestPatchRequest,
+    PlaytestResetRequest,
+    PlaytestResponse,
+    PlaytestThreadAssociateRequest,
+    PlaytestVote,
+    PlaytestVotesResponse,
 )
 from litestar.datastructures import State
 from litestar.di import Provide
@@ -25,7 +29,7 @@ class PlaytestController(litestar.Controller):
         summary="Get Playtest Data",
         description="Retrieve the full playtest metadata and related details for a specific thread.",
     )
-    async def get_playtest(self, thread_id: int, playtest_svc: PlaytestService) -> PlaytestReadDTO:
+    async def get_playtest(self, thread_id: int, playtest_svc: PlaytestService) -> PlaytestResponse:
         """Retrieve a playtest by its thread ID.
 
         Args:
@@ -69,7 +73,7 @@ class PlaytestController(litestar.Controller):
     )
     async def cast_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, data: PlaytestVote, playtest_svc: PlaytestService
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Cast a vote for a playtest.
 
         Args:
@@ -95,7 +99,7 @@ class PlaytestController(litestar.Controller):
     )
     async def delete_vote(
         self, request: litestar.Request, thread_id: int, user_id: int, playtest_svc: PlaytestService
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Delete a user's vote for a playtest.
 
         Args:
@@ -128,7 +132,7 @@ class PlaytestController(litestar.Controller):
         summary="Get Playtest Votes",
         description="Retrieve all votes currently associated with a specific playtest thread.",
     )
-    async def get_votes(self, thread_id: int, playtest_svc: PlaytestService) -> PlaytestVotesAll:
+    async def get_votes(self, thread_id: int, playtest_svc: PlaytestService) -> PlaytestVotesResponse:
         """Retrieve all votes for a playtest.
 
         Args:
@@ -147,7 +151,9 @@ class PlaytestController(litestar.Controller):
         description="Update playtest metadata such as verification ID or message references.",
         include_in_schema=False,
     )
-    async def edit_playtest_meta(self, thread_id: int, data: PlaytestPatchDTO, playtest_svc: PlaytestService) -> None:
+    async def edit_playtest_meta(
+        self, thread_id: int, data: PlaytestPatchRequest, playtest_svc: PlaytestService
+    ) -> None:
         """Update metadata for a playtest.
 
         Args:
@@ -166,9 +172,9 @@ class PlaytestController(litestar.Controller):
     )
     async def associate_playtest_meta(
         self,
-        data: PlaytestAssociateIDThread,
+        data: PlaytestThreadAssociateRequest,
         playtest_svc: PlaytestService,
-    ) -> PlaytestReadDTO:
+    ) -> PlaytestResponse:
         """Associate a playtest thread with PlaytestMeta.
 
         Args:
@@ -188,8 +194,8 @@ class PlaytestController(litestar.Controller):
         status_code=HTTP_202_ACCEPTED,
     )
     async def approve_playtest(
-        self, request: litestar.Request, thread_id: int, data: PlaytestApproveCreate, playtest_svc: PlaytestService
-    ) -> JobStatus:
+        self, request: litestar.Request, thread_id: int, data: PlaytestApproveRequest, playtest_svc: PlaytestService
+    ) -> JobStatusResponse:
         """Approve a playtest.
 
         Args:
@@ -212,8 +218,8 @@ class PlaytestController(litestar.Controller):
         status_code=HTTP_202_ACCEPTED,
     )
     async def force_accept_playtest(
-        self, request: litestar.Request, thread_id: int, data: PlaytestForceAcceptCreate, playtest_svc: PlaytestService
-    ) -> JobStatus:
+        self, request: litestar.Request, thread_id: int, data: PlaytestForceAcceptRequest, playtest_svc: PlaytestService
+    ) -> JobStatusResponse:
         """Force accept a playtest.
 
         Args:
@@ -237,8 +243,8 @@ class PlaytestController(litestar.Controller):
         status_code=HTTP_202_ACCEPTED,
     )
     async def force_deny_playtest(
-        self, request: litestar.Request, thread_id: int, data: PlaytestForceDenyCreate, playtest_svc: PlaytestService
-    ) -> JobStatus:
+        self, request: litestar.Request, thread_id: int, data: PlaytestForceDenyRequest, playtest_svc: PlaytestService
+    ) -> JobStatusResponse:
         """Force deny a playtest.
 
         Args:
@@ -262,8 +268,8 @@ class PlaytestController(litestar.Controller):
         status_code=HTTP_202_ACCEPTED,
     )
     async def reset_playtest(
-        self, request: litestar.Request, thread_id: int, data: PlaytestResetCreate, playtest_svc: PlaytestService
-    ) -> JobStatus:
+        self, request: litestar.Request, thread_id: int, data: PlaytestResetRequest, playtest_svc: PlaytestService
+    ) -> JobStatusResponse:
         """Reset a playtest to its initial state.
 
         Args:

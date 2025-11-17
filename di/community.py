@@ -2,19 +2,17 @@ from typing import Literal
 
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
-    CommunityLeaderboardReadDTO,
+from genjipk_sdk.completions import MapRecordProgressionResponse, TimePlayedPerRankResponse
+from genjipk_sdk.maps import (
     MapCompletionStatisticsResponse,
     MapCountsResponse,
     MapPerDifficultyStatisticsResponse,
-    MapRecordProgressionResponse,
-    PlayersPerSkillTierResponse,
-    PlayersPerXPTierResponse,
+    OverwatchCode,
     PopularMapsStatisticsResponse,
-    TimePlayedPerRankResponse,
     TopCreatorsResponse,
 )
-from genjipk_sdk.utilities._types import OverwatchCode
+from genjipk_sdk.users import CommunityLeaderboardResponse
+from genjipk_sdk.xp import PlayersPerSkillTierResponse, PlayersPerXPTierResponse
 from litestar.datastructures import State
 
 from .base import BaseService
@@ -39,7 +37,7 @@ class CommunityService(BaseService):
         sort_direction: Literal["asc", "desc"] = "asc",
         page_size: Literal[10, 20, 25, 50] = 10,
         page_number: int = 1,
-    ) -> list[CommunityLeaderboardReadDTO]:
+    ) -> list[CommunityLeaderboardResponse]:
         """Fetch the community leaderboard with filtering, sorting, and pagination.
 
         Filters by optional `name` (nickname/global name ILIKE), `tier_name` (XP tier),
@@ -230,7 +228,7 @@ class CommunityService(BaseService):
         offset = (page_number - 1) * page_size
         _name = f"%{name}%" if name else name
         rows = await self._conn.fetch(query, page_size, offset, _name, tier_name, skill_rank)
-        return msgspec.convert(rows, list[CommunityLeaderboardReadDTO])
+        return msgspec.convert(rows, list[CommunityLeaderboardResponse])
 
     async def get_players_per_xp_tier(self) -> list[PlayersPerXPTierResponse]:
         """Compute player counts per main XP tier.

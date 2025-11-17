@@ -6,17 +6,17 @@ import logging
 import asyncpg
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
+from genjipk_sdk.users import (
     NOTIFICATION_TYPES,
     Notification,
     OverwatchUsernameItem,
-    OverwatchUsernamesReadDTO,
-    SettingsUpdate,
-    UserCreateDTO,
-    UserReadDTO,
-    UserUpdateDTO,
+    OverwatchUsernamesResponse,
+    RankDetailResponse,
+    SettingsUpdateRequest,
+    UserCreateRequest,
+    UserResponse,
+    UserUpdateRequest,
 )
-from genjipk_sdk.models.users import RankDetailReadDTO
 from litestar.datastructures import State
 from litestar.status_codes import HTTP_400_BAD_REQUEST
 
@@ -41,7 +41,7 @@ class UserService(BaseService):
         query = "SELECT EXISTS(SELECT 1 FROM maps.creators WHERE user_id=$1);"
         return await self._conn.fetchval(query, user_id)
 
-    async def update_user_names(self, user_id: int, data: UserUpdateDTO) -> None:
+    async def update_user_names(self, user_id: int, data: UserUpdateRequest) -> None:
         """Update user names.
 
         Args:
@@ -72,7 +72,7 @@ class UserService(BaseService):
         """
         await self._conn.execute(q, user_id, is_nick_set, nick_val, is_glob_set, glob_val)
 
-    async def list_users(self) -> list[UserReadDTO] | None:
+    async def list_users(self) -> list[UserResponse] | None:
         """Return all users.
 
         Returns:
@@ -92,9 +92,9 @@ class UserService(BaseService):
             ;
         """
         rows = await self._conn.fetch(query)
-        return msgspec.convert(rows, list[UserReadDTO])
+        return msgspec.convert(rows, list[UserResponse])
 
-    async def get_user(self, user_id: int) -> UserReadDTO | None:
+    async def get_user(self, user_id: int) -> UserResponse | None:
         """Return a single user with coalesced display name.
 
         Args:
@@ -126,7 +126,7 @@ class UserService(BaseService):
         row = await self._conn.fetchrow(query, user_id)
         if not row:
             return None
-        return UserReadDTO(
+        return UserResponse(
             id=row["id"],
             nickname=row["nickname"],
             global_name=row["global_name"],
@@ -152,7 +152,7 @@ class UserService(BaseService):
         """
         return await self._conn.fetchval(query, user_id)
 
-    async def create_user(self, data: UserCreateDTO) -> UserReadDTO:
+    async def create_user(self, data: UserCreateRequest) -> UserResponse:
         """Create a user (no-op if already exists) and return the basic model.
 
         Args:
@@ -182,7 +182,7 @@ class UserService(BaseService):
                     extra=parse_pg_detail(e.detail),
                 )
             raise
-        return UserReadDTO(
+        return UserResponse(
             id=data.id,
             nickname=data.nickname,
             global_name=data.global_name,
@@ -234,7 +234,7 @@ class UserService(BaseService):
         rows = await self._conn.fetch(query, user_id)
         return msgspec.convert(rows, list[OverwatchUsernameItem])
 
-    async def get_overwatch_usernames_response(self, user_id: int) -> OverwatchUsernamesReadDTO:
+    async def get_overwatch_usernames_response(self, user_id: int) -> OverwatchUsernamesResponse:
         """Build an OverwatchUsernamesReadDTO for a user.
 
         Args:
@@ -249,7 +249,7 @@ class UserService(BaseService):
         secondary = usernames[1].username if len(usernames) > 1 else None
         tertiary = usernames[2].username if len(usernames) > 2 else None  # noqa: PLR2004
 
-        return OverwatchUsernamesReadDTO(user_id=user_id, primary=primary, secondary=secondary, tertiary=tertiary)
+        return OverwatchUsernamesResponse(user_id=user_id, primary=primary, secondary=secondary, tertiary=tertiary)
 
     async def fetch_user_notifications(self, user_id: int) -> int | None:
         """Get the current notification bitmask for a user.
@@ -310,7 +310,9 @@ class UserService(BaseService):
         log.debug("User %s settings: %s", user_id, notifications)
         return {"user_id": user_id, "notifications": notifications}
 
-    async def apply_notifications_bulk(self, user_id: int, data: SettingsUpdate) -> tuple[bool, int | None, str | None]:
+    async def apply_notifications_bulk(
+        self, user_id: int, data: SettingsUpdateRequest
+    ) -> tuple[bool, int | None, str | None]:
         """Apply a bulk notifications update.
 
         Args:
@@ -379,7 +381,7 @@ class UserService(BaseService):
             log.error("Error updating single notification: %s", e)
             return False, None, str(e)
 
-    async def get_user_rank_data(self, user_id: int) -> list[RankDetailReadDTO]:
+    async def get_user_rank_data(self, user_id: int) -> list[RankDetailResponse]:
         """Compute rank details for a user based on verified completions and medal thresholds.
 
         Args:

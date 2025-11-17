@@ -4,24 +4,23 @@ from typing import Any
 import asyncpg
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
-    CompletionCreateDTO,
-    CompletionPatchDTO,
-    CompletionReadDTO,
-    CompletionSubmissionReadDTO,
-    MessageQueueVerificationChange,
-    UpvoteUpdateDTO,
+from genjipk_sdk.completions import (
+    CompletionCreateRequest,
+    CompletionPatchRequest,
+    CompletionResponse,
+    CompletionSubmissionResponse,
+    CompletionVerificationUpdateRequest,
+    PendingVerificationResponse,
+    SuspiciousCompletionCreateRequest,
+    SuspiciousCompletionResponse,
+    UpvoteCreateRequest,
+    UpvoteSubmissionJobResponse,
+    UpvoteUpdateEvent,
+    VerificationChangedEvent,
 )
-from genjipk_sdk.models.completions import (
-    CompletionVerificationPutDTO,
-    PendingVerification,
-    SuspiciousCompletionReadDTO,
-    SuspiciousCompletionWriteDTO,
-    UpvoteCreateDTO,
-)
-from genjipk_sdk.models.jobs import JobStatus, UpvoteSubmissionReturnDTO
-from genjipk_sdk.utilities import DifficultyAll
-from genjipk_sdk.utilities._types import OverwatchCode
+from genjipk_sdk.difficulties import DifficultyAll
+from genjipk_sdk.internal import JobStatusResponse
+from genjipk_sdk.maps import OverwatchCode
 from litestar import Request
 from litestar.datastructures import State
 from litestar.status_codes import HTTP_400_BAD_REQUEST
@@ -39,7 +38,7 @@ class CompletionsService(BaseService):
         difficulty: DifficultyAll | None = None,
         page_size: int = 10,
         page_number: int = 1,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Retrieve verified completions for a user.
 
         Args:
@@ -191,10 +190,10 @@ class CompletionsService(BaseService):
         """
         offset = (page_number - 1) * page_size
         rows = await self._conn.fetch(query, user_id, difficulty, page_size, offset)
-        models = msgspec.convert(rows, list[CompletionReadDTO])
+        models = msgspec.convert(rows, list[CompletionResponse])
         return models
 
-    async def submit_completion(self, data: CompletionCreateDTO) -> int:
+    async def submit_completion(self, data: CompletionCreateRequest) -> int:
         """Submit a new completion record and publish an event.
 
         Args:
@@ -247,7 +246,7 @@ class CompletionsService(BaseService):
 
         return res
 
-    def build_completion_patch_query(self, patch: CompletionPatchDTO) -> tuple[str, list[Any]]:
+    def build_completion_patch_query(self, patch: CompletionPatchRequest) -> tuple[str, list[Any]]:
         """Build a dynamic SQL UPDATE query for patching a completion.
 
         Args:
@@ -282,7 +281,7 @@ class CompletionsService(BaseService):
 
         return query.strip(), values
 
-    async def edit_completion(self, state: State, record_id: int, data: CompletionPatchDTO) -> None:
+    async def edit_completion(self, state: State, record_id: int, data: CompletionPatchRequest) -> None:
         """Apply partial updates to a completion record.
 
         Args:
@@ -311,7 +310,7 @@ class CompletionsService(BaseService):
         """
         return await self._conn.fetchval(query, code, user_id)
 
-    async def get_completion_submission(self, record_id: int) -> CompletionSubmissionReadDTO:
+    async def get_completion_submission(self, record_id: int) -> CompletionSubmissionResponse:
         """Retrieve detailed submission info for a completion.
 
         Includes ranking, medal eligibility, usernames, and flags.
@@ -474,9 +473,9 @@ class CompletionsService(BaseService):
 
         """
         row = await self._conn.fetchrow(query, record_id)
-        return msgspec.convert(row, CompletionSubmissionReadDTO)
+        return msgspec.convert(row, CompletionSubmissionResponse)
 
-    async def get_pending_verifications(self) -> list[PendingVerification]:
+    async def get_pending_verifications(self) -> list[PendingVerificationResponse]:
         """Retrieve completions awaiting verification.
 
         Returns:
@@ -489,22 +488,22 @@ class CompletionsService(BaseService):
             ORDER BY inserted_at DESC;
         """
         rows = await self._conn.fetch(query)
-        return msgspec.convert(rows, list[PendingVerification])
+        return msgspec.convert(rows, list[PendingVerificationResponse])
 
     async def verify_completion(
         self,
         request: Request,
         record_id: int,
-        data: CompletionVerificationPutDTO,
+        data: CompletionVerificationUpdateRequest,
         use_pool: bool = False,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Update verification status for a completion and publish an event.
 
         Args:
             request (Request): Request.
             record_id (int): Completion record ID.
             data (CompletionVerificationPutDTO): Verification details.
-
+            use_pool (bool): Use a pool instead of a route-based connection.
         """
         query = "UPDATE core.completions SET verified=$2, verified_by=$3, reason=$4 WHERE id=$1;"
         if use_pool:
@@ -512,7 +511,7 @@ class CompletionsService(BaseService):
                 await conn.execute(query, record_id, data.verified, data.verified_by, data.reason)
         else:
             await self._conn.execute(query, record_id, data.verified, data.verified_by, data.reason)
-        message_data = MessageQueueVerificationChange(
+        message_data = VerificationChangedEvent(
             completion_id=record_id,
             verified=data.verified,
             verified_by=data.verified_by,
@@ -528,7 +527,9 @@ class CompletionsService(BaseService):
         )
         return job_status
 
-    async def get_completions_leaderboard(self, code: str, page_number: int, page_size: int) -> list[CompletionReadDTO]:
+    async def get_completions_leaderboard(
+        self, code: str, page_number: int, page_size: int
+    ) -> list[CompletionResponse]:
         """Retrieve the leaderboard for a map.
 
         Args:
@@ -693,11 +694,11 @@ class CompletionsService(BaseService):
         else:
             offset = (page_number - 1) * page_size
             rows = await self._conn.fetch(query, code, page_size, offset)
-        models = msgspec.convert(rows, list[CompletionReadDTO])
+        models = msgspec.convert(rows, list[CompletionResponse])
 
         return models
 
-    async def get_world_records_per_user(self, user_id: int) -> list[CompletionReadDTO]:
+    async def get_world_records_per_user(self, user_id: int) -> list[CompletionResponse]:
         """Get all world records (rank 1 verified non-legacy runs) for a specific user.
 
         Computes true global ranks per map using each user's latest verified non-legacy
@@ -848,14 +849,14 @@ class CompletionsService(BaseService):
             wm.inserted_at;         -- older first among identical times
         """
         rows = await self._conn.fetch(query, user_id)
-        return msgspec.convert(rows, list[CompletionReadDTO])
+        return msgspec.convert(rows, list[CompletionResponse])
 
     async def get_legacy_completions_per_map(
         self,
         code: OverwatchCode,
         page_number: int,
         page_size: int,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Get the latest legacy completion per user for a given map code with ranks.
 
         For the target map, selects each user's latest legacy submission, ranks only
@@ -1000,9 +1001,9 @@ class CompletionsService(BaseService):
         """
         offset = (page_number - 1) * page_size
         rows = await self._conn.fetch(query, code, page_size, offset)
-        return msgspec.convert(rows, list[CompletionReadDTO])
+        return msgspec.convert(rows, list[CompletionResponse])
 
-    async def get_suspicious_flags(self, user_id: int) -> list[SuspiciousCompletionReadDTO]:
+    async def get_suspicious_flags(self, user_id: int) -> list[SuspiciousCompletionResponse]:
         """Retrieve suspicious flags associated with a user.
 
         Args:
@@ -1021,9 +1022,9 @@ class CompletionsService(BaseService):
             WHERE u.id = $1
         """
         rows = await self._conn.fetch(query, user_id)
-        return msgspec.convert(rows, list[SuspiciousCompletionReadDTO])
+        return msgspec.convert(rows, list[SuspiciousCompletionResponse])
 
-    async def set_suspicious_flags(self, data: SuspiciousCompletionWriteDTO) -> None:
+    async def set_suspicious_flags(self, data: SuspiciousCompletionCreateRequest) -> None:
         """Insert a suspicious flag for a completion.
 
         Args:
@@ -1059,7 +1060,7 @@ class CompletionsService(BaseService):
         val = await self._conn.fetchval(query, message_id)
         return val or 0
 
-    async def upvote_submission(self, request: Request, data: UpvoteCreateDTO) -> UpvoteSubmissionReturnDTO:
+    async def upvote_submission(self, request: Request, data: UpvoteCreateRequest) -> UpvoteSubmissionJobResponse:
         """Upvote a completion submission.
 
         Args:
@@ -1088,7 +1089,7 @@ class CompletionsService(BaseService):
             )
         job_status = None
         if count != 0 and count % upvote_channel_amount_breakpoint == 0:
-            messsage_data = UpvoteUpdateDTO(
+            messsage_data = UpvoteUpdateEvent(
                 data.user_id,
                 data.message_id,
             )
@@ -1097,9 +1098,9 @@ class CompletionsService(BaseService):
                 data=messsage_data,
                 headers=request.headers,
             )
-        return UpvoteSubmissionReturnDTO(job_status, count)
+        return UpvoteSubmissionJobResponse(job_status, count)
 
-    async def get_all_completions(self, page_size: int, page_number: int) -> list[CompletionReadDTO]:
+    async def get_all_completions(self, page_size: int, page_number: int) -> list[CompletionResponse]:
         """Get all completions from most recent.
 
         Args:
@@ -1224,7 +1225,7 @@ class CompletionsService(BaseService):
         """
         offset = (page_number - 1) * page_size
         rows = await self._conn.fetch(query, page_size, offset)
-        return msgspec.convert(rows, list[CompletionReadDTO])
+        return msgspec.convert(rows, list[CompletionResponse])
 
     async def set_quality_vote_for_map_code(self, code: OverwatchCode, user_id: int, quality: int) -> None:
         """Set the quality vote for a map code per user."""

@@ -1,5 +1,5 @@
 from asyncpg import Connection
-from genjipk_sdk.models.tags import (
+from genjipk_sdk.tags import (
     TagRowDTO,
     TagsAutocompleteRequest,
     TagsAutocompleteResponse,

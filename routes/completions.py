@@ -5,26 +5,26 @@ from typing import Literal
 
 import aiohttp
 import msgspec
-from genjipk_sdk.models import (
-    CompletionCreateDTO,
-    CompletionPatchDTO,
-    CompletionReadDTO,
-    CompletionSubmissionReadDTO,
-    MessageQueueCompletionsCreate,
+from genjipk_sdk.completions import (
+    CompletionCreatedEvent,
+    CompletionCreateRequest,
+    CompletionPatchRequest,
+    CompletionResponse,
+    CompletionSubmissionJobResponse,
+    CompletionSubmissionResponse,
+    CompletionVerificationUpdateRequest,
+    FailedAutoverifyEvent,
+    OcrResponse,
+    PendingVerificationResponse,
+    QualityUpdateRequest,
+    SuspiciousCompletionCreateRequest,
+    SuspiciousCompletionResponse,
+    UpvoteCreateRequest,
+    UpvoteSubmissionJobResponse,
 )
-from genjipk_sdk.models.completions import (
-    CompletionVerificationPutDTO,
-    FailedAutoverifyMessage,
-    OcrApiResponse,
-    PendingVerification,
-    QualityUpdateDTO,
-    SuspiciousCompletionReadDTO,
-    SuspiciousCompletionWriteDTO,
-    UpvoteCreateDTO,
-)
-from genjipk_sdk.models.jobs import JobStatus, SubmitCompletionReturnDTO, UpvoteSubmissionReturnDTO
-from genjipk_sdk.utilities import DifficultyAll
-from genjipk_sdk.utilities._types import OverwatchCode
+from genjipk_sdk.difficulties import DifficultyAll
+from genjipk_sdk.internal import JobStatusResponse
+from genjipk_sdk.maps import OverwatchCode
 from litestar import Controller, Request, get, patch, post, put
 from litestar.datastructures import State
 from litestar.di import Provide
@@ -67,7 +67,7 @@ class CompletionsController(Controller):
         difficulty: DifficultyAll | None = None,
         page_size: Literal[10, 20, 25, 50] = 10,
         page_number: int = 1,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Get completions for a specific user.
 
         Args:
@@ -92,7 +92,7 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         user_id: int,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Get completions for a specific user.
 
         Args:
@@ -110,15 +110,16 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         request: Request,
-        data: CompletionCreateDTO,
+        data: CompletionCreateRequest,
         autocomplete: AutocompleteService,
-    ) -> SubmitCompletionReturnDTO:
+    ) -> CompletionSubmissionJobResponse:
         """Submit a new completion.
 
         Args:
             svc (CompletionsService): Service layer for completions.
             request (Request): Request.
             data (CompletionCreateDTO): DTO with completion details.
+            autocomplete (AutocompleteService): Service for autocomplete.
 
         Returns:
             int: ID of the newly inserted completion.
@@ -139,17 +140,17 @@ class CompletionsController(Controller):
             self._tasks.add(task)
             task.add_done_callback(lambda t: self._tasks.remove(t))
 
-            return SubmitCompletionReturnDTO(None, completion_id)
+            return CompletionSubmissionJobResponse(None, completion_id)
 
         idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
         job_status = await svc.publish_message(
             routing_key="api.completion.submission",
-            data=MessageQueueCompletionsCreate(completion_id),
+            data=CompletionCreatedEvent(completion_id),
             headers=request.headers,
             idempotency_key=idempotency_key,
             use_pool=True,
         )
-        return SubmitCompletionReturnDTO(job_status, completion_id)
+        return CompletionSubmissionJobResponse(job_status, completion_id)
 
     @patch(
         path="/{record_id:int}",
@@ -162,7 +163,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         state: State,
         record_id: int,
-        data: CompletionPatchDTO,
+        data: CompletionPatchRequest,
     ) -> None:
         """Patch an existing completion.
 
@@ -187,7 +188,7 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         record_id: int,
-    ) -> CompletionSubmissionReadDTO:
+    ) -> CompletionSubmissionResponse:
         """Get a detailed view of a completion submission.
 
         Args:
@@ -195,7 +196,7 @@ class CompletionsController(Controller):
             record_id (int): Completion record ID.
 
         Returns:
-            CompletionSubmissionReadDTO: Detailed submission information.
+            CompletionSubmissionResponse: Detailed submission information.
 
         """
         return await svc.get_completion_submission(record_id)
@@ -208,14 +209,14 @@ class CompletionsController(Controller):
     async def get_pending_verifications(
         self,
         svc: CompletionsService,
-    ) -> list[PendingVerification]:
+    ) -> list[PendingVerificationResponse]:
         """Get completions waiting for verification.
 
         Args:
             svc (CompletionsService): Service layer for completions.
 
         Returns:
-            list[PendingVerification]: List of unverified completions.
+            list[PendingVerificationResponse]: List of unverified completions.
 
         """
         return await svc.get_pending_verifications()
@@ -230,15 +231,15 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         request: Request,
         record_id: int,
-        data: CompletionVerificationPutDTO,
-    ) -> JobStatus:
+        data: CompletionVerificationUpdateRequest,
+    ) -> JobStatusResponse:
         """Verify or reject a completion.
 
         Args:
             svc (CompletionsService): Service layer for completions.
             request (Request): Request.
             record_id (int): Completion record ID.
-            data (CompletionVerificationPutDTO): Verification details.
+            data (CompletionVerificationUpdateRequest): Verification details.
 
         """
         return await svc.verify_completion(request, record_id, data)
@@ -254,7 +255,7 @@ class CompletionsController(Controller):
         code: str,
         page_size: Literal[10, 20, 25, 50, 0] = 10,
         page_number: int = 1,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Get the leaderboard for a map.
 
         Args:
@@ -264,7 +265,7 @@ class CompletionsController(Controller):
             page_number: 1-based page number.
 
         Returns:
-            list[CompletionReadDTO]: Ranked completions for the map.
+            list[CompletionResponse]: Ranked completions for the map.
 
         """
         return await svc.get_completions_leaderboard(code, page_number, page_size)
@@ -278,7 +279,7 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         user_id: int,
-    ) -> list[SuspiciousCompletionReadDTO]:
+    ) -> list[SuspiciousCompletionResponse]:
         """Get suspicious flags for a user.
 
         Args:
@@ -286,7 +287,7 @@ class CompletionsController(Controller):
             user_id (int): ID of the user.
 
         Returns:
-            list[SuspiciousCompletionReadDTO]: List of suspicious flags.
+            list[SuspiciousCompletionResponse]: List of suspicious flags.
 
         """
         return await svc.get_suspicious_flags(user_id)
@@ -297,13 +298,13 @@ class CompletionsController(Controller):
     async def set_suspicious_flags(
         self,
         svc: CompletionsService,
-        data: SuspiciousCompletionWriteDTO,
+        data: SuspiciousCompletionCreateRequest,
     ) -> None:
         """Add a suspicious flag to a completion.
 
         Args:
             svc (CompletionsService): Service layer for completions.
-            data (SuspiciousCompletionWriteDTO): Flag details.
+            data (SuspiciousCompletionCreateRequest): Flag details.
 
         """
         if not data.message_id and not data.verification_id:
@@ -321,14 +322,14 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         request: Request,
-        data: UpvoteCreateDTO,
-    ) -> UpvoteSubmissionReturnDTO:
+        data: UpvoteCreateRequest,
+    ) -> UpvoteSubmissionJobResponse:
         """Upvote a completion submission.
 
         Args:
             svc (CompletionsService): Service layer for completions.
             request (Request): Request.
-            data (UpvoteCreateDTO): Upvote details.
+            data (UpvoteCreateRequest): Upvote details.
 
         Returns:
             int: Updated upvote count.
@@ -346,7 +347,7 @@ class CompletionsController(Controller):
         svc: CompletionsService,
         page_size: Literal[10, 20, 25, 50] = 10,
         page_number: int = 1,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Get all completions that are verified sorted by most recent.
 
         Args:
@@ -355,7 +356,7 @@ class CompletionsController(Controller):
             page_number: 1-based page number.
 
         Returns:
-            list[CompletionReadDTO]: Completion data.
+            list[CompletionResponse]: Completion data.
 
         """
         return await svc.get_all_completions(page_size, page_number)
@@ -389,7 +390,7 @@ class CompletionsController(Controller):
         code: str,
         page_number: int = 1,
         page_size: Literal[10, 20, 25, 50] = 10,
-    ) -> list[CompletionReadDTO]:
+    ) -> list[CompletionResponse]:
         """Get the legacy completions for a map code."""
         return await svc.get_legacy_completions_per_map(code, page_number, page_size)
 
@@ -402,13 +403,14 @@ class CompletionsController(Controller):
         self,
         svc: CompletionsService,
         code: OverwatchCode,
-        data: QualityUpdateDTO,
+        data: QualityUpdateRequest,
     ) -> None:
         """Set the quality vote for a map code for a user."""
         return await svc.set_quality_vote_for_map_code(code, data.user_id, data.quality)
 
     @get(path="/upvoting/{message_id:int}")
     async def get_upvotes_from_message_id(self, svc: CompletionsService, message_id: int) -> int:
+        """Get upvote count from a message id."""
         return await svc.get_upvotes_from_message_id(message_id)
 
 
@@ -417,7 +419,7 @@ async def _attempt_auto_verify(
     svc: CompletionsService,
     autocomplete: AutocompleteService,
     completion_id: int,
-    data: CompletionCreateDTO,
+    data: CompletionCreateRequest,
 ) -> None:
     hostname = "genjishimada-ocr" if os.getenv("API_ENVIRONMENT") == "production" else "genjishimada-ocr-dev"
     async with (
@@ -426,7 +428,7 @@ async def _attempt_auto_verify(
     ):
         resp.raise_for_status()
         raw_ocr_data = await resp.read()
-        ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrApiResponse)
+        ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrResponse)
 
     extracted = ocr_data.extracted
     extracted_user_cleaned = await autocomplete.get_similar_users(extracted.name or "", use_pool=True)
@@ -448,7 +450,7 @@ async def _attempt_auto_verify(
     log.debug(f"user_match: {user_match} ({data.user_id=} vs {extracted_user_id=})")
 
     if code_match and time_match and user_match:
-        verification_data = CompletionVerificationPutDTO(
+        verification_data = CompletionVerificationUpdateRequest(
             verified_by=969632729643753482,
             verified=True,
             reason="Auto Verified by Genji Shimada.",
@@ -458,7 +460,7 @@ async def _attempt_auto_verify(
 
     await svc.publish_message(
         routing_key="api.completion.autoverification.failed",
-        data=FailedAutoverifyMessage(
+        data=FailedAutoverifyEvent(
             submitted_code=data.code,
             submitted_time=data.time,
             user_id=data.user_id,
@@ -478,7 +480,7 @@ async def _attempt_auto_verify(
     idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
     await svc.publish_message(
         routing_key="api.completion.submission",
-        data=MessageQueueCompletionsCreate(completion_id),
+        data=CompletionCreatedEvent(completion_id),
         headers=request.headers,
         idempotency_key=idempotency_key,
         use_pool=True,

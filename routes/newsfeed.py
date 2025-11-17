@@ -4,9 +4,7 @@ from logging import getLogger
 from typing import Annotated, Literal
 
 import litestar
-from genjipk_sdk.models.jobs import CreatePublishNewsfeedReturnDTO
-from genjipk_sdk.models.newsfeed import NewsfeedEvent
-from genjipk_sdk.utilities._types import NewsfeedEventType
+from genjipk_sdk.newsfeed import NewsfeedEvent, NewsfeedEventType, PublishNewsfeedJobResponse
 from litestar import Controller, Request
 from litestar.di import Provide
 from litestar.params import Parameter
@@ -34,7 +32,7 @@ class NewsfeedController(Controller):
         request: Request,
         svc: NewsfeedService,
         data: NewsfeedEvent,
-    ) -> CreatePublishNewsfeedReturnDTO:
+    ) -> PublishNewsfeedJobResponse:
         """Create a newsfeed event and publish its ID.
 
         Args:

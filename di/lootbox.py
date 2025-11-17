@@ -2,17 +2,14 @@ import random
 
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
+from genjipk_sdk.lootbox import (
     LootboxKeyType,
     LootboxKeyTypeResponse,
     RewardTypeResponse,
-    TierChange,
-    UserLootboxKeyAmountsResponse,
-    UserRewardsResponse,
-    XpGrant,
-    XpGrantResult,
+    UserLootboxKeyAmountResponse,
+    UserRewardResponse,
 )
-from genjipk_sdk.models.xp import XpGrantMQ
+from genjipk_sdk.xp import TierChangeResponse, XpGrantEvent, XpGrantRequest, XpGrantResponse
 from litestar import Request
 from litestar.datastructures import State
 from litestar.datastructures.headers import Headers
@@ -105,7 +102,7 @@ class LootboxService(BaseService):
         reward_type: str | None = None,
         key_type: LootboxKeyType | None = None,
         rarity: str | None = None,
-    ) -> list[UserRewardsResponse]:
+    ) -> list[UserRewardResponse]:
         """View all rewards earned by a specific user.
 
         Args:
@@ -149,13 +146,13 @@ class LootboxService(BaseService):
             WHERE user_id = $1::bigint AND medal != 'Placeholder' AND ($2::text IS NULL OR medal = $2::text)
         """
         rows = await self._conn.fetch(query, user_id, reward_type, key_type, rarity)
-        return msgspec.convert(rows, list[UserRewardsResponse])
+        return msgspec.convert(rows, list[UserRewardResponse])
 
     async def view_user_keys(
         self,
         user_id: int,
         key_type: LootboxKeyType | None = None,
-    ) -> list[UserLootboxKeyAmountsResponse]:
+    ) -> list[UserLootboxKeyAmountResponse]:
         """View keys owned by a user.
 
         Args:
@@ -176,7 +173,7 @@ class LootboxService(BaseService):
         """
 
         rows = await self._conn.fetch(query, user_id, key_type)
-        return msgspec.convert(rows, list[UserLootboxKeyAmountsResponse])
+        return msgspec.convert(rows, list[UserLootboxKeyAmountResponse])
 
     async def _get_user_key_count(self, user_id: int, key_type: LootboxKeyType) -> int:
         """Get the number of keys a user has of a given type.
@@ -437,7 +434,7 @@ class LootboxService(BaseService):
             return 0
         return amount
 
-    async def grant_user_xp(self, headers: Headers, user_id: int, data: XpGrant) -> XpGrantResult:
+    async def grant_user_xp(self, headers: Headers, user_id: int, data: XpGrantRequest) -> XpGrantResponse:
         """Grant XP to a user.
 
         Performs an upsert into the XP table, summing new and existing values.
@@ -472,8 +469,8 @@ class LootboxService(BaseService):
           (SELECT amount FROM upsert_result)           AS new_amount;
         """
         row = await self._conn.fetchrow(query, user_id, data.amount)
-        result = msgspec.convert(row, XpGrantResult)
-        message = XpGrantMQ(
+        result = msgspec.convert(row, XpGrantResponse)
+        message = XpGrantEvent(
             user_id=user_id,
             amount=data.amount,
             type=data.type,
@@ -487,7 +484,7 @@ class LootboxService(BaseService):
         )
         return result
 
-    async def get_xp_tier_change(self, old_xp: int, new_xp: int) -> TierChange:
+    async def get_xp_tier_change(self, old_xp: int, new_xp: int) -> TierChangeResponse:
         """Calculate tier change when XP is updated.
 
         Determines whether the user has ranked up, sub-ranked up,
@@ -542,7 +539,7 @@ class LootboxService(BaseService):
             JOIN new_tier n ON TRUE;
         """
         row = await self._conn.fetchrow(query, old_xp, new_xp)
-        return msgspec.convert(row, TierChange)
+        return msgspec.convert(row, TierChangeResponse)
 
     async def edit_xp_multiplier(self, multiplier: float) -> None:
         """Edit the XP multiplier.

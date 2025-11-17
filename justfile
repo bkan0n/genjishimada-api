@@ -8,7 +8,7 @@ run:
 
 updatesdk:
     uv remove genjipk-sdk
-    uv add "genjipk-sdk @ git+https://github.com/bkan0n/genjipk-sdk"
+    uv add genjipk-sdk
 
 test:
     pytest -n 8 .

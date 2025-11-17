@@ -3,24 +3,22 @@ from typing import Any
 import asyncpg
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
-    JobStatus,
-    PlaytestAssociateIDThread,
-    PlaytestPatchDTO,
+from genjipk_sdk.difficulties import DIFFICULTY_MIDPOINTS, DifficultyAll, convert_raw_difficulty_to_difficulty_all
+from genjipk_sdk.internal import JobStatusResponse
+from genjipk_sdk.maps import (
+    PlaytestApprovedEvent,
+    PlaytestForceAcceptedEvent,
+    PlaytestForceDeniedEvent,
+    PlaytestPatchRequest,
+    PlaytestResetEvent,
+    PlaytestResponse,
+    PlaytestThreadAssociateRequest,
     PlaytestVote,
-    PlaytestVoteCastMQ,
-    PlaytestVoteRemovedMQ,
-    PlaytestVotesAll,
+    PlaytestVoteCastEvent,
+    PlaytestVoteRemovedEvent,
+    PlaytestVotesResponse,
     PlaytestVoteWithUser,
 )
-from genjipk_sdk.models.maps import (
-    PlaytestApproveMQ,
-    PlaytestForceAcceptMQ,
-    PlaytestForceDenyMQ,
-    PlaytestReadDTO,
-    PlaytestResetMQ,
-)
-from genjipk_sdk.utilities import DIFFICULTY_MIDPOINTS, DifficultyAll, convert_raw_difficulty_to_difficulty_all
 from litestar import Request
 from litestar.datastructures import State
 from litestar.status_codes import HTTP_400_BAD_REQUEST
@@ -31,7 +29,7 @@ from .base import BaseService
 
 
 class PlaytestService(BaseService):
-    async def get_playtest(self, thread_id: int) -> PlaytestReadDTO:
+    async def get_playtest(self, thread_id: int) -> PlaytestResponse:
         """Fetch playtest meta (by thread_id).
 
         Args:
@@ -61,9 +59,9 @@ class PlaytestService(BaseService):
         row = await self._conn.fetchrow(q, thread_id)
         if not row:
             raise ValueError("Playtest not found.")
-        return msgspec.convert(row, PlaytestReadDTO, from_attributes=True)
+        return msgspec.convert(row, PlaytestResponse, from_attributes=True)
 
-    async def get_votes(self, thread_id: int) -> PlaytestVotesAll:
+    async def get_votes(self, thread_id: int) -> PlaytestVotesResponse:
         """Return all votes and the average for a playtest.
 
         Args:
@@ -97,9 +95,11 @@ class PlaytestService(BaseService):
         player_votes = msgspec.convert(rows, list[PlaytestVoteWithUser] | None) or []
         values = [x.difficulty for x in player_votes]
         average = round(sum(values) / len(values), 2) if values else 0
-        return PlaytestVotesAll(player_votes, average)
+        return PlaytestVotesResponse(player_votes, average)
 
-    async def cast_vote(self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote) -> JobStatus:
+    async def cast_vote(
+        self, *, request: Request, thread_id: int, user_id: int, data: PlaytestVote
+    ) -> JobStatusResponse:
         """Cast or update a vote, then publish MQ.
 
         Args:
@@ -126,14 +126,14 @@ class PlaytestService(BaseService):
                 status_code=HTTP_400_BAD_REQUEST,
                 detail="Vote failed. You do not have a verified, non-completion submission associated with this map.",
             )
-        payload = PlaytestVoteCastMQ(
+        payload = PlaytestVoteCastEvent(
             thread_id=thread_id,
             voter_id=user_id,
             difficulty_value=data.difficulty,
         )
         return await self.publish_message(routing_key="api.playtest.vote.cast", data=payload, headers=request.headers)
 
-    async def delete_vote(self, *, request: Request, thread_id: int, user_id: int) -> JobStatus:
+    async def delete_vote(self, *, request: Request, thread_id: int, user_id: int) -> JobStatusResponse:
         """Remove a user's vote, then publish MQ.
 
         Args:
@@ -152,7 +152,7 @@ class PlaytestService(BaseService):
         q = "DELETE FROM playtests.votes WHERE playtest_thread_id = $1 AND user_id = $2"
         await self._conn.execute(q, thread_id, user_id)
 
-        payload = PlaytestVoteRemovedMQ(thread_id=thread_id, voter_id=user_id)
+        payload = PlaytestVoteRemovedEvent(thread_id=thread_id, voter_id=user_id)
         return await self.publish_message(routing_key="api.playtest.vote.remove", data=payload, headers=request.headers)
 
     async def delete_all_votes(self, *, state: State, thread_id: int) -> None:
@@ -166,7 +166,7 @@ class PlaytestService(BaseService):
         q = "DELETE FROM playtests.votes WHERE playtest_thread_id = $1"
         await self._conn.execute(q, thread_id)
 
-    async def edit_playtest_meta(self, *, thread_id: int, data: PlaytestPatchDTO) -> None:
+    async def edit_playtest_meta(self, *, thread_id: int, data: PlaytestPatchRequest) -> None:
         """Patch playtest meta row (dynamic SET).
 
         Args:
@@ -187,7 +187,7 @@ class PlaytestService(BaseService):
 
         await self._conn.execute(q, *args)
 
-    async def associate_playtest_meta(self, *, data: PlaytestAssociateIDThread) -> PlaytestReadDTO:
+    async def associate_playtest_meta(self, *, data: PlaytestThreadAssociateRequest) -> PlaytestResponse:
         """Associate a playtest meta row with a discord thread_id.
 
         Args:
@@ -217,7 +217,7 @@ class PlaytestService(BaseService):
         )
         if not row:
             raise ValueError("Association failed.")
-        return msgspec.convert(row, PlaytestReadDTO, from_attributes=True)
+        return msgspec.convert(row, PlaytestResponse, from_attributes=True)
 
     async def approve(
         self,
@@ -225,7 +225,7 @@ class PlaytestService(BaseService):
         *,
         thread_id: int,
         verifier_id: int,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Approve a map's playtest.
 
         Marks the map as approved, updates its difficulty, and completes the playtest metadata.
@@ -265,7 +265,7 @@ class PlaytestService(BaseService):
                 map_id,
             )
             code = await self._conn.fetchval("SELECT code FROM core.maps WHERE id=$1", map_id)
-        payload = PlaytestApproveMQ(
+        payload = PlaytestApprovedEvent(
             code=code,
             thread_id=thread_id,
             difficulty=convert_raw_difficulty_to_difficulty_all(difficulty),
@@ -287,7 +287,7 @@ class PlaytestService(BaseService):
         thread_id: int,
         difficulty: DifficultyAll,
         verifier_id: int,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Force accept a playtest regardless of normal flow.
 
         Sets the map as approved, updates difficulty, and marks the playtest as completed.
@@ -317,7 +317,7 @@ class PlaytestService(BaseService):
                 "UPDATE playtests.meta SET completed=TRUE WHERE thread_id=$1",
                 thread_id,
             )
-        payload = PlaytestForceAcceptMQ(
+        payload = PlaytestForceAcceptedEvent(
             thread_id=thread_id,
             difficulty=difficulty,
             verifier_id=verifier_id,
@@ -337,7 +337,7 @@ class PlaytestService(BaseService):
         thread_id: int,
         verifier_id: int,
         reason: str,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Force deny a playtest.
 
         Marks the map as rejected, hides it, and completes the playtest metadata.
@@ -363,7 +363,7 @@ class PlaytestService(BaseService):
                 "UPDATE playtests.meta SET completed=TRUE WHERE thread_id=$1",
                 thread_id,
             )
-        payload = PlaytestForceDenyMQ(
+        payload = PlaytestForceDeniedEvent(
             thread_id=thread_id,
             verifier_id=verifier_id,
             reason=reason,
@@ -385,7 +385,7 @@ class PlaytestService(BaseService):
         reason: str,
         remove_votes: bool,
         remove_completions: bool,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Reset a playtest.
 
         Optionally removes votes and/or completions, while leaving the map entry intact.
@@ -406,7 +406,7 @@ class PlaytestService(BaseService):
             if remove_completions:
                 await self._conn.execute("DELETE FROM core.completions WHERE playtest_thread_id=$1", thread_id)
 
-        payload = PlaytestResetMQ(
+        payload = PlaytestResetEvent(
             thread_id=thread_id,
             verifier_id=verifier_id,
             reason=reason,
