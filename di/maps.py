@@ -106,6 +106,7 @@ class MapSearchFilters(msgspec.Struct):
     completion_filter: CompletionFilter = "All"
     playtest_filter: PlaytestFilter = "All"
     return_all: bool = False
+    force_filters: bool = False
     page_size: Literal[10, 20, 25, 50, 12] = 10
     page_number: int = 1
 
@@ -326,7 +327,7 @@ class MapSearchSQLBuilder:
             or an empty string if none are required.
 
         """
-        if self._filters.code:
+        if self._filters.code and self._filters.force_filters:
             return ""
         self._generate_mechanics_cte()
         self._generate_restrictions_cte()

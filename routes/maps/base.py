@@ -303,6 +303,7 @@ class BaseMapsController(litestar.Controller):
         finalized_playtests: bool | None = None,
         playtest_filter: PlaytestFilter = "All",
         return_all: bool = False,
+        force_filters: bool = False,
         page_size: Literal[10, 20, 25, 50, 12] = 10,
         page_number: int = 1,
     ) -> list[MapResponse] | None:
@@ -332,6 +333,7 @@ class BaseMapsController(litestar.Controller):
             playtest_filter (PlaytestFilter): Playtest filter.
             finalized_playtests (Bool | None): To return only finalized playtests.
             return_all (bool): If True, ignore pagination and return all results.
+            force_filters (bool) If True, do not return early if map code is given.
             page_size (Literal[10, 20, 25, 50]): Page size.
             page_number (int): Page number.
 
@@ -364,6 +366,7 @@ class BaseMapsController(litestar.Controller):
             page_size=page_size,
             page_number=page_number,
             return_all=return_all,
+            force_filters=force_filters,
         )
         return await svc.fetch_maps(single=False, filters=filters)
 
