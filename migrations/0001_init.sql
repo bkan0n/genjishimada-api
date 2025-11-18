@@ -485,7 +485,7 @@ BEGIN
   JOIN core.maps m ON m.id = c.map_id
   WHERE c.user_id = NEW.user_id
     AND c.map_id  = NEW.map_id
-    AND c.legacy  = FALSE
+    AND c.legacy  = FALSE AND verified IS FALSE AND verified_by
   ORDER BY c.time ASC
   LIMIT 1;
 
