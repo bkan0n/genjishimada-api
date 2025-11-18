@@ -205,32 +205,36 @@ class CompletionsService(BaseService):
 
         """
         query = """
-            WITH target_map AS (
-                SELECT id AS map_id FROM core.maps WHERE code = $1
-            )
-            INSERT INTO core.completions (
+        WITH target_map AS (
+            SELECT
+                id AS map_id,
+                official,
+                (playtesting = 'In Progress') AS in_playtest
+            FROM core.maps
+            WHERE code = $1
+        ),
+        computed AS (
+            SELECT
                 map_id,
-                user_id,
-                time,
-                screenshot,
-                video,
-                completion
-            )
-            VALUES (
-                (SELECT map_id FROM target_map), $2, $3, $4, $5, $6
-            )
-            RETURNING id;
+                (in_playtest
+                 OR $5 IS NULL OR $5 = ''
+                 OR NOT official) AS completion_flag
+            FROM target_map
+        )
+        INSERT INTO core.completions (
+            map_id,
+            user_id,
+            time,
+            screenshot,
+            video,
+            completion
+        )
+        SELECT
+            c.map_id, $2, $3, $4, $5, c.completion_flag
+        FROM computed c
+        RETURNING id;
         """
-        in_playtest = await self._conn.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM core.maps WHERE playtesting='In Progress' AND code=$1);",
-            data.code,
-        )
 
-        is_official = await self._conn.fetchval(
-            "SELECT official FROM core.maps WHERE code=$1;",
-            data.code,
-        )
-        completion = in_playtest or not data.video or not is_official
         try:
             res = await self._conn.fetchval(
                 query,
@@ -239,11 +243,9 @@ class CompletionsService(BaseService):
                 data.time,
                 data.screenshot,
                 data.video,
-                completion,
             )
         except asyncpg.exceptions.CheckViolationError as e:
             raise CustomHTTPException(status_code=HTTP_400_BAD_REQUEST, detail=e.message or "")
-
         return res
 
     def build_completion_patch_query(self, patch: CompletionPatchRequest) -> tuple[str, list[Any]]:
