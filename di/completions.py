@@ -217,7 +217,7 @@ class CompletionsService(BaseService):
             SELECT
                 map_id,
                 (in_playtest
-                 OR $5 IS NULL OR $5 = ''
+                 OR $5::text IS NULL OR $5::text = ''
                  OR NOT official) AS completion_flag
             FROM target_map
         )
