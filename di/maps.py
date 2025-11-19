@@ -327,7 +327,7 @@ class MapSearchSQLBuilder:
             or an empty string if none are required.
 
         """
-        if self._filters.code and self._filters.force_filters:
+        if self._filters.code and not self._filters.force_filters:
             return ""
         self._generate_mechanics_cte()
         self._generate_restrictions_cte()
