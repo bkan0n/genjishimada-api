@@ -1,5 +1,5 @@
-from genjipk_sdk.models import ChangeRequestCreateDTO, ChangeRequestReadDTO, StaleChangeRequestReadDTO
-from genjipk_sdk.utilities._types import OverwatchCode
+from genjipk_sdk.change_requests import ChangeRequestCreateRequest, ChangeRequestResponse, StaleChangeRequestResponse
+from genjipk_sdk.maps import OverwatchCode
 from litestar import Controller, get, patch, post
 from litestar.di import Provide
 
@@ -44,7 +44,7 @@ class ChangeRequestsController(Controller):
         summary="Create Change Request",
         description="Create a change request for a specific map code and discussion thread.",
     )
-    async def create_change_request(self, svc: ChangeRequestsService, data: ChangeRequestCreateDTO) -> None:
+    async def create_change_request(self, svc: ChangeRequestsService, data: ChangeRequestCreateRequest) -> None:
         """Create a new change request.
 
         Args:
@@ -74,7 +74,7 @@ class ChangeRequestsController(Controller):
         summary="List Open Change Requests by Code",
         description="List all unresolved change requests for the specified map code, newest first.",
     )
-    async def get_change_requests(self, svc: ChangeRequestsService, code: OverwatchCode) -> list[ChangeRequestReadDTO]:
+    async def get_change_requests(self, svc: ChangeRequestsService, code: OverwatchCode) -> list[ChangeRequestResponse]:
         """Get unresolved change requests for a map.
 
         Args:
@@ -92,7 +92,7 @@ class ChangeRequestsController(Controller):
         summary="List Stale Change Requests",
         description="Return change requests older than two weeks that are neither alerted nor resolved.",
     )
-    async def get_stale_change_requests(self, svc: ChangeRequestsService) -> list[StaleChangeRequestReadDTO]:
+    async def get_stale_change_requests(self, svc: ChangeRequestsService) -> list[StaleChangeRequestResponse]:
         """Get stale change requests needing follow-up.
 
         Args:

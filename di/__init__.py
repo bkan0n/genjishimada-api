@@ -4,7 +4,6 @@ from .community import CommunityService, provide_community_service
 from .completions import CompletionsService, provide_completions_service
 from .image_storage import ImageStorageService, provide_image_storage_service
 from .lootbox import LootboxService, provide_lootbox_service
-from .lust import LustService, provide_lust_service
 from .maps import MapService, provide_map_service
 from .newsfeed import NewsfeedService, provide_newsfeed_service
 from .playtests import PlaytestService, provide_playtest_service
@@ -18,7 +17,6 @@ __all__ = (
     "CompletionsService",
     "ImageStorageService",
     "LootboxService",
-    "LustService",
     "MapService",
     "NewsfeedService",
     "PlaytestService",
@@ -30,7 +28,6 @@ __all__ = (
     "provide_completions_service",
     "provide_image_storage_service",
     "provide_lootbox_service",
-    "provide_lust_service",
     "provide_map_service",
     "provide_newsfeed_service",
     "provide_playtest_service",

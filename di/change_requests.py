@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import ChangeRequestCreateDTO, ChangeRequestReadDTO, StaleChangeRequestReadDTO
-from genjipk_sdk.utilities._types import OverwatchCode
+from genjipk_sdk.change_requests import ChangeRequestCreateRequest, ChangeRequestResponse, StaleChangeRequestResponse
+from genjipk_sdk.maps import OverwatchCode
 from litestar.datastructures import State
 from litestar.di import Provide
 
@@ -30,7 +30,7 @@ class ChangeRequestsService(BaseService):
         val = await self._conn.fetchval(query, thread_id, code)
         return str(user_id) in val
 
-    async def create_change_request(self, data: ChangeRequestCreateDTO) -> None:
+    async def create_change_request(self, data: ChangeRequestCreateRequest) -> None:
         """Create a new change request.
 
         Args:
@@ -81,7 +81,7 @@ class ChangeRequestsService(BaseService):
         """
         await self._conn.execute(query, thread_id)
 
-    async def get_change_requests(self, code: OverwatchCode) -> list[ChangeRequestReadDTO]:
+    async def get_change_requests(self, code: OverwatchCode) -> list[ChangeRequestResponse]:
         """Retrieve unresolved change requests for a given map code.
 
         Args:
@@ -99,9 +99,9 @@ class ChangeRequestsService(BaseService):
             ORDER BY created_at DESC, resolved DESC;
         """
         rows = await self._conn.fetch(query, code)
-        return msgspec.convert(rows, list[ChangeRequestReadDTO])
+        return msgspec.convert(rows, list[ChangeRequestResponse])
 
-    async def get_stale_change_requests(self) -> list[StaleChangeRequestReadDTO]:
+    async def get_stale_change_requests(self) -> list[StaleChangeRequestResponse]:
         """Retrieve stale change requests older than two weeks.
 
         Stale requests are those that have not been resolved or alerted.
@@ -118,7 +118,7 @@ class ChangeRequestsService(BaseService):
                 AND alerted IS FALSE AND resolved IS FALSE;
         """
         rows = await self._conn.fetch(query)
-        return msgspec.convert(rows, list[StaleChangeRequestReadDTO])
+        return msgspec.convert(rows, list[StaleChangeRequestResponse])
 
     async def update_alerted_change_request(self, thread_id: int) -> None:
         """Mark a change request as alerted.

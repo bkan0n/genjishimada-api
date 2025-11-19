@@ -8,29 +8,7 @@ from typing import Any, Awaitable, Callable, Iterator, Literal, ParamSpec, Seque
 import asyncpg
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
-    Creator,
-    Guide,
-    GuideFull,
-    JobStatus,
-    MapCreateDTO,
-    MapMasteryCreateDTO,
-    MapMasteryCreateReturnDTO,
-    MapMasteryData,
-    MapPatchDTO,
-    MapReadDTO,
-    MapReadPartialDTO,
-    Medals,
-    MessageQueueCreatePlaytest,
-    NewsfeedEvent,
-    NewsfeedNewMap,
-    PlaytestCreatePartialDTO,
-    QualityValueDTO,
-    SendToPlaytestDTO,
-    TrendingMapReadDTO,
-)
-from genjipk_sdk.models.jobs import CreateMapReturnDTO
-from genjipk_sdk.utilities import (
+from genjipk_sdk.difficulties import (
     DIFFICULTY_MIDPOINTS,
     DIFFICULTY_RANGES_ALL,
     DIFFICULTY_RANGES_TOP,
@@ -38,15 +16,34 @@ from genjipk_sdk.utilities import (
     DifficultyTop,
     convert_raw_difficulty_to_difficulty_all,
 )
-from genjipk_sdk.utilities._types import (
+from genjipk_sdk.internal import JobStatusResponse
+from genjipk_sdk.maps import (
+    GuideFullResponse,
+    GuideResponse,
     GuideURL,
     MapCategory,
+    MapCreateRequest,
+    MapCreationJobResponse,
+    MapMasteryCreateRequest,
+    MapMasteryCreateResponse,
+    MapMasteryResponse,
+    MapPartialResponse,
+    MapPatchRequest,
+    MapResponse,
     Mechanics,
+    MedalsResponse,
     OverwatchCode,
     OverwatchMap,
+    PlaytestCreatedEvent,
+    PlaytestCreatePartialRequest,
     PlaytestStatus,
+    QualityValueRequest,
     Restrictions,
+    SendToPlaytestRequest,
+    TrendingMapResponse,
 )
+from genjipk_sdk.newsfeed import NewsfeedEvent, NewsfeedNewMap
+from genjipk_sdk.users import Creator
 from litestar import Request
 from litestar.datastructures import State
 from litestar.exceptions import HTTPException
@@ -109,6 +106,7 @@ class MapSearchFilters(msgspec.Struct):
     completion_filter: CompletionFilter = "All"
     playtest_filter: PlaytestFilter = "All"
     return_all: bool = False
+    force_filters: bool = False
     page_size: Literal[10, 20, 25, 50, 12] = 10
     page_number: int = 1
 
@@ -329,7 +327,7 @@ class MapSearchSQLBuilder:
             or an empty string if none are required.
 
         """
-        if self._filters.code:
+        if self._filters.code and self._filters.force_filters:
             return ""
         self._generate_mechanics_cte()
         self._generate_restrictions_cte()
@@ -704,10 +702,10 @@ class MapService(BaseService):
     @_handle_exceptions
     async def create_map(
         self,
-        data: MapCreateDTO,
+        data: MapCreateRequest,
         request: Request,
         newsfeed_service: NewsfeedService,
-    ) -> CreateMapReturnDTO:
+    ) -> MapCreationJobResponse:
         """Create a map.
 
         Within a transaction, inserts the core map row and all related data (creators, guide,
@@ -734,9 +732,9 @@ class MapService(BaseService):
             await self._insert_medals(map_id, data.medals, remove_existing=False)
             job_status = None
             if data.playtesting == "In Progress":
-                metadata = PlaytestCreatePartialDTO(data.code, data.difficulty)
+                metadata = PlaytestCreatePartialRequest(data.code, data.difficulty)
                 playtest_id = await self.create_playtest_meta_partial(metadata)
-                message_data = MessageQueueCreatePlaytest(data.code, playtest_id)
+                message_data = PlaytestCreatedEvent(data.code, playtest_id)
                 idempotency_key = f"map:submit:{map_id}"
                 job_status = await self.publish_message(
                     routing_key="api.playtest.create",
@@ -766,10 +764,10 @@ class MapService(BaseService):
             )
             await newsfeed_service.create_and_publish(event, headers=request.headers, use_pool=True)
 
-        return CreateMapReturnDTO(job_status, map_data)
+        return MapCreationJobResponse(job_status, map_data)
 
     @_handle_exceptions
-    async def patch_map(self, code: OverwatchCode, data: MapPatchDTO) -> MapReadDTO:
+    async def patch_map(self, code: OverwatchCode, data: MapPatchRequest) -> MapResponse:
         """Edit a map.
 
         Looks up the map by code, then updates the core row and replaces related data
@@ -797,9 +795,9 @@ class MapService(BaseService):
         self,
         *,
         code: OverwatchCode,
-        data: SendToPlaytestDTO,
+        data: SendToPlaytestRequest,
         request: Request,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Send a map back to playtest."""
         map_id = await self._lookup_id(code)
         current_map_data = await self.fetch_maps(single=True, filters=MapSearchFilters(code=code))
@@ -807,10 +805,10 @@ class MapService(BaseService):
             raise CustomHTTPException(detail="Map is already in playtest", status_code=HTTP_400_BAD_REQUEST)
         async with self._conn.transaction():
             await self.convert_map_to_legacy(code)
-            await self.patch_map(code, MapPatchDTO(playtesting="In Progress"))
-            payload = PlaytestCreatePartialDTO(code, data.initial_difficulty)
+            await self.patch_map(code, MapPatchRequest(playtesting="In Progress"))
+            payload = PlaytestCreatePartialRequest(code, data.initial_difficulty)
             playtest_id = await self.create_playtest_meta_partial(payload)
-        message_data = MessageQueueCreatePlaytest(code, playtest_id)
+        message_data = PlaytestCreatedEvent(code, playtest_id)
         idempotency_key = f"map:send-to-playtest:{map_id}:{playtest_id}"
         job_status = await self.publish_message(
             routing_key="api.playtest.create",
@@ -820,7 +818,7 @@ class MapService(BaseService):
         )
         return job_status
 
-    async def create_playtest_meta_partial(self, data: PlaytestCreatePartialDTO) -> int:
+    async def create_playtest_meta_partial(self, data: PlaytestCreatePartialRequest) -> int:
         """Create Playtest Meta Partial.
 
         Inserts a `playtests.meta` record using the map's ID and the midpoint of the
@@ -842,7 +840,7 @@ class MapService(BaseService):
         """
         return await self._conn.fetchval(query, map_id, DIFFICULTY_MIDPOINTS[data.initial_difficulty])
 
-    async def fetch_partial_map(self, code: OverwatchCode) -> MapReadPartialDTO:
+    async def fetch_partial_map(self, code: OverwatchCode) -> MapPartialResponse:
         """Fetch a partial of a Map.
 
         Useful when initializing a playtest where a subset of fields is sufficient.
@@ -882,7 +880,7 @@ class MapService(BaseService):
         row = await self._conn.fetchrow(query, map_id)
         if not row:
             raise CustomHTTPException(detail="Map not found", status_code=404)
-        return MapReadPartialDTO(
+        return MapPartialResponse(
             map_id=row["id"],
             code=row["code"],
             map_name=row["map_name"],
@@ -894,16 +892,16 @@ class MapService(BaseService):
     @overload
     async def fetch_maps(
         self, *, single: Literal[True], filters: MapSearchFilters, use_pool: bool = False
-    ) -> MapReadDTO: ...
+    ) -> MapResponse: ...
 
     @overload
     async def fetch_maps(
         self, *, single: Literal[False], filters: MapSearchFilters, use_pool: bool = False
-    ) -> list[MapReadDTO]: ...
+    ) -> list[MapResponse]: ...
 
     async def fetch_maps(
         self, *, single: bool, filters: MapSearchFilters, use_pool: bool = False
-    ) -> list[MapReadDTO] | MapReadDTO | None:
+    ) -> list[MapResponse] | MapResponse | None:
         """Fetch maps from the database with any filter.
 
         Builds SQL with `MapSearchSQLBuilder`, executes it, converts rows to `MapReadDTO`,
@@ -925,7 +923,7 @@ class MapService(BaseService):
                 rows = await conn.fetch(query, *args)
         else:
             rows = await self._conn.fetch(query, *args)
-        _models = msgspec.convert(rows, list[MapReadDTO])
+        _models = msgspec.convert(rows, list[MapResponse])
         if not _models:
             return _models
         if single:
@@ -1018,7 +1016,7 @@ class MapService(BaseService):
             },
         )
 
-    async def _insert_core_map_data(self, data: MapCreateDTO) -> int:
+    async def _insert_core_map_data(self, data: MapCreateRequest) -> int:
         """Insert the core map row and return its ID.
 
         Args:
@@ -1054,7 +1052,7 @@ class MapService(BaseService):
         )
         return _id
 
-    async def _edit_core_map_data(self, code: OverwatchCode, data: MapPatchDTO) -> None:
+    async def _edit_core_map_data(self, code: OverwatchCode, data: MapPatchRequest) -> None:
         """Update core map columns from a patch payload.
 
         Converts `difficulty` to `raw_difficulty` when present and performs a dynamic
@@ -1197,7 +1195,7 @@ class MapService(BaseService):
     async def _insert_medals(
         self,
         map_id: int,
-        medals: Medals | msgspec.UnsetType | None,
+        medals: MedalsResponse | msgspec.UnsetType | None,
         *,
         remove_existing: bool,
     ) -> None:
@@ -1252,7 +1250,7 @@ class MapService(BaseService):
             code: Overwatch map code to update.
             archive: Whether the map should be archived (True) or unarchived (False).
         """
-        data = MapPatchDTO(archived=archive)
+        data = MapPatchRequest(archived=archive)
         await self._edit_core_map_data(code, data)
 
     async def archive_map(self, code: OverwatchCode) -> None:
@@ -1297,7 +1295,7 @@ class MapService(BaseService):
         for code in codes:
             await self._archival_helper(code, False)
 
-    async def get_guides(self, code: OverwatchCode, include_records: bool = False) -> list[GuideFull]:
+    async def get_guides(self, code: OverwatchCode, include_records: bool = False) -> list[GuideFullResponse]:
         """Fetch guides for a map with resolved username list.
 
         Args:
@@ -1358,7 +1356,7 @@ class MapService(BaseService):
         """
         res = await self._conn.fetch(query, code, include_records)
         log.debug(res)
-        return msgspec.convert(res, list[GuideFull])
+        return msgspec.convert(res, list[GuideFullResponse])
 
     async def delete_guide(self, code: OverwatchCode, user_id: int) -> None:
         """Delete a guide for the given map code and user.
@@ -1377,7 +1375,7 @@ class MapService(BaseService):
         """
         await self._conn.execute(query, code, user_id)
 
-    async def edit_guide(self, code: OverwatchCode, user_id: int, url: GuideURL) -> Guide:
+    async def edit_guide(self, code: OverwatchCode, user_id: int, url: GuideURL) -> GuideResponse:
         """Edit a guide URL for a given map code and user.
 
         Args:
@@ -1400,9 +1398,9 @@ class MapService(BaseService):
             RETURNING g.user_id, g.url;
         """
         res = await self._conn.fetchrow(query, code, user_id, url)
-        return msgspec.convert(res, Guide)
+        return msgspec.convert(res, GuideResponse)
 
-    async def create_guide(self, code: OverwatchCode, data: Guide) -> Guide:
+    async def create_guide(self, code: OverwatchCode, data: GuideResponse) -> GuideResponse:
         """Create a guide for a given map.
 
         Args:
@@ -1425,7 +1423,7 @@ class MapService(BaseService):
         RETURNING user_id, url;
         """
         res = await self._conn.fetchrow(query, code, data.user_id, data.url)
-        return msgspec.convert(res, Guide)
+        return msgspec.convert(res, GuideResponse)
 
     async def get_affected_users(self, code: OverwatchCode) -> list[int]:
         """Get IDs of users affected by a map change.
@@ -1451,7 +1449,9 @@ class MapService(BaseService):
         rows = await self._conn.fetch(query, code)
         return msgspec.convert(rows, list[int])
 
-    async def get_map_mastery_data(self, user_id: int, map_name: OverwatchMap | None = None) -> list[MapMasteryData]:
+    async def get_map_mastery_data(
+        self, user_id: int, map_name: OverwatchMap | None = None
+    ) -> list[MapMasteryResponse]:
         """Get mastery data for a user, optionally scoped to a map.
 
         Args:
@@ -1464,7 +1464,7 @@ class MapService(BaseService):
         """
         return await get_map_mastery_data(self._conn, user_id, map_name)
 
-    async def update_mastery(self, data: MapMasteryCreateDTO) -> MapMasteryCreateReturnDTO:
+    async def update_mastery(self, data: MapMasteryCreateRequest) -> MapMasteryCreateResponse | None:
         """Create or update mastery data.
 
         Inserts a new mastery record or updates the existing one if different.
@@ -1492,7 +1492,7 @@ class MapService(BaseService):
                 END AS operation_status;
         """
         row = await self._conn.fetchrow(query, data.user_id, data.map_name, data.level)
-        return msgspec.convert(row, MapMasteryCreateReturnDTO | None)
+        return msgspec.convert(row, MapMasteryCreateResponse | None)
 
     async def _check_if_any_pending_verifications(self, code: OverwatchCode) -> bool:
         query = """
@@ -1580,7 +1580,7 @@ class MapService(BaseService):
             await self._remove_map_medal_entries(code)
             return await self._convert_completions_to_legacy(code)
 
-    async def override_map_quality_votes(self, code: OverwatchCode, data: QualityValueDTO) -> None:
+    async def override_map_quality_votes(self, code: OverwatchCode, data: QualityValueRequest) -> None:
         """Override the map quality votes for a particular map code.
 
         Args:
@@ -1597,7 +1597,7 @@ class MapService(BaseService):
         """
         await self._conn.execute(query, map_id, data.value)
 
-    async def get_trending_maps(self, limit: Literal[1, 3, 5, 10, 15, 20, 25]) -> list[TrendingMapReadDTO]:
+    async def get_trending_maps(self, limit: Literal[1, 3, 5, 10, 15, 20, 25]) -> list[TrendingMapResponse]:
         """Get trending maps."""
         query = """
         WITH
@@ -1876,7 +1876,7 @@ class MapService(BaseService):
             w_momentum,
             limit,
         )
-        return msgspec.convert(rows, list[TrendingMapReadDTO])
+        return msgspec.convert(rows, list[TrendingMapResponse])
 
     async def _link_two_map_codes(
         self,
@@ -1902,10 +1902,10 @@ class MapService(BaseService):
     def _create_cloned_map_data_payload(
         self,
         *,
-        map_data: MapReadDTO,
+        map_data: MapResponse,
         code: OverwatchCode,
         is_official: bool,
-    ) -> MapCreateDTO:
+    ) -> MapCreateRequest:
         """Create a map creation payload by cloning an existing map.
 
         Generates a `MapCreateDTO` from an existing `MapReadDTO`, preserving all
@@ -1915,13 +1915,14 @@ class MapService(BaseService):
         Args:
             map_data (MapReadDTO): The source map data to clone.
             code (OverwatchCode): The new map code to assign to the cloned map.
+            is_official (bool): Change attrs based on if the map to be cloned is official or not.
 
         Returns:
             MapCreateDTO: The fully prepared DTO for creating the cloned map.
         """
         creators = [Creator(c.id, c.is_primary) for c in map_data.creators]
         guide_url = map_data.guides[0] if map_data.guides else ""
-        create_map_payload = MapCreateDTO(
+        create_map_payload = MapCreateRequest(
             code=code,
             map_name=map_data.map_name,
             category=map_data.category,
@@ -1949,7 +1950,7 @@ class MapService(BaseService):
         official_code: OverwatchCode,
         unofficial_code: OverwatchCode,
         newsfeed: NewsfeedService,
-    ) -> tuple[JobStatus | None, bool]:
+    ) -> tuple[JobStatusResponse | None, bool]:
         """Link an official and unofficial map, cloning as needed.
 
         Determines which maps exist and performs the appropriate operation:

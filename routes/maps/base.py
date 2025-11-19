@@ -8,18 +8,34 @@ from typing import Any, Awaitable, Callable, Iterable, Literal
 import litestar
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import (
-    ArchivalStatusPatchDTO,
-    Guide,
-    GuideFull,
-    JobStatus,
-    MapCreateDTO,
-    MapMasteryCreateDTO,
-    MapMasteryCreateReturnDTO,
-    MapMasteryData,
-    MapPatchDTO,
-    MapReadDTO,
-    MapReadPartialDTO,
+from genjipk_sdk.difficulties import DifficultyTop
+from genjipk_sdk.internal import JobStatusResponse
+from genjipk_sdk.maps import (
+    ArchivalStatusPatchRequest,
+    GuideFullResponse,
+    GuideResponse,
+    GuideURL,
+    LinkMapsCreateRequest,
+    MapCategory,
+    MapCreateRequest,
+    MapCreationJobResponse,
+    MapMasteryCreateRequest,
+    MapMasteryCreateResponse,
+    MapMasteryResponse,
+    MapPartialResponse,
+    MapPatchRequest,
+    MapResponse,
+    Mechanics,
+    OverwatchCode,
+    OverwatchMap,
+    PlaytestStatus,
+    QualityValueRequest,
+    Restrictions,
+    SendToPlaytestRequest,
+    TrendingMapResponse,
+    UnlinkMapsCreateRequest,
+)
+from genjipk_sdk.newsfeed import (
     NewsfeedArchive,
     NewsfeedBulkArchive,
     NewsfeedBulkUnarchive,
@@ -31,21 +47,6 @@ from genjipk_sdk.models import (
     NewsfeedMapEdit,
     NewsfeedUnarchive,
     NewsfeedUnlinkedMap,
-    QualityValueDTO,
-    SendToPlaytestDTO,
-    TrendingMapReadDTO,
-)
-from genjipk_sdk.models.jobs import CreateMapReturnDTO
-from genjipk_sdk.models.maps import LinkMapsCreateDTO, UnlinkMapsCreateDTO
-from genjipk_sdk.utilities import DifficultyTop
-from genjipk_sdk.utilities._types import (
-    GuideURL,
-    MapCategory,
-    Mechanics,
-    OverwatchCode,
-    OverwatchMap,
-    PlaytestStatus,
-    Restrictions,
 )
 from litestar.datastructures import Headers
 from litestar.di import Provide
@@ -302,9 +303,10 @@ class BaseMapsController(litestar.Controller):
         finalized_playtests: bool | None = None,
         playtest_filter: PlaytestFilter = "All",
         return_all: bool = False,
+        force_filters: bool = False,
         page_size: Literal[10, 20, 25, 50, 12] = 10,
         page_number: int = 1,
-    ) -> list[MapReadDTO] | None:
+    ) -> list[MapResponse] | None:
         """Get maps with particular filters.
 
         Args:
@@ -328,8 +330,10 @@ class BaseMapsController(litestar.Controller):
             medal_filter (MedalFilter): Medal presence filter.
             user_id (int | None): Filter by user specific completion context.
             completion_filter (CompletionFilter): Completion presence filter.
+            playtest_filter (PlaytestFilter): Playtest filter.
             finalized_playtests (Bool | None): To return only finalized playtests.
             return_all (bool): If True, ignore pagination and return all results.
+            force_filters (bool) If True, do not return early if map code is given.
             page_size (Literal[10, 20, 25, 50]): Page size.
             page_number (int): Page number.
 
@@ -362,6 +366,7 @@ class BaseMapsController(litestar.Controller):
             page_size=page_size,
             page_number=page_number,
             return_all=return_all,
+            force_filters=force_filters,
         )
         return await svc.fetch_maps(single=False, filters=filters)
 
@@ -374,7 +379,7 @@ class BaseMapsController(litestar.Controller):
         ),
         include_in_schema=False,
     )
-    async def get_partial_playtest_map(self, svc: MapService, code: OverwatchCode) -> MapReadPartialDTO:
+    async def get_partial_playtest_map(self, svc: MapService, code: OverwatchCode) -> MapPartialResponse:
         """Fetch the partial playtest data.
 
         Args:
@@ -396,10 +401,10 @@ class BaseMapsController(litestar.Controller):
         self,
         request: litestar.Request,
         svc: MapService,
-        data: MapCreateDTO,
+        data: MapCreateRequest,
         newsfeed: NewsfeedService,
         users: UserService,
-    ) -> CreateMapReturnDTO:
+    ) -> MapCreationJobResponse:
         """Submit a map of any type.
 
         Args:
@@ -419,9 +424,9 @@ class BaseMapsController(litestar.Controller):
 
     async def _generate_patch_newsfeed(  # noqa: PLR0913
         self,
-        newsfeed: "NewsfeedService",
-        old_data: "MapReadDTO",
-        patch_data: "MapPatchDTO",
+        newsfeed: NewsfeedService,
+        old_data: MapResponse,
+        patch_data: MapPatchRequest,
         reason: str,
         request: litestar.Request,
         *,
@@ -503,12 +508,12 @@ class BaseMapsController(litestar.Controller):
     async def update_map(  # noqa: PLR0913
         self,
         code: OverwatchCode,
-        data: MapPatchDTO,
+        data: MapPatchRequest,
         svc: MapService,
         newsfeed: NewsfeedService,
         users: UserService,
         request: litestar.Request,
-    ) -> MapReadDTO:
+    ) -> MapResponse:
         """Update map.
 
         Args:
@@ -602,7 +607,9 @@ class BaseMapsController(litestar.Controller):
         summary="Get Guides",
         description="Fetch all guides associated with the specified map.",
     )
-    async def get_guides(self, svc: MapService, code: OverwatchCode, include_records: bool = False) -> list[GuideFull]:
+    async def get_guides(
+        self, svc: MapService, code: OverwatchCode, include_records: bool = False
+    ) -> list[GuideFullResponse]:
         """Fetch guides for a map.
 
         Args:
@@ -637,7 +644,7 @@ class BaseMapsController(litestar.Controller):
         summary="Edit Guide",
         description="Update the guide URL for the given map and user.",
     )
-    async def edit_guide(self, svc: MapService, code: OverwatchCode, user_id: int, url: GuideURL) -> Guide:
+    async def edit_guide(self, svc: MapService, code: OverwatchCode, user_id: int, url: GuideURL) -> GuideResponse:
         """Edit a guide URL for a map and user.
 
         Args:
@@ -661,11 +668,11 @@ class BaseMapsController(litestar.Controller):
         self,
         svc: MapService,
         code: OverwatchCode,
-        data: Guide,
+        data: GuideResponse,
         newsfeed: NewsfeedService,
         users: UserService,
         request: litestar.Request,
-    ) -> Guide:
+    ) -> GuideResponse:
         """Create a guide for a map.
 
         Args:
@@ -716,7 +723,7 @@ class BaseMapsController(litestar.Controller):
     )
     async def get_map_mastery_data(
         self, svc: MapService, user_id: int, map_name: OverwatchMap | None = None
-    ) -> list[MapMasteryData]:
+    ) -> list[MapMasteryResponse]:
         """Get mastery data for a user, optionally scoped to a map.
 
         Args:
@@ -737,7 +744,7 @@ class BaseMapsController(litestar.Controller):
         tags=["Mastery"],
         include_in_schema=False,
     )
-    async def update_mastery(self, svc: MapService, data: MapMasteryCreateDTO) -> MapMasteryCreateReturnDTO | None:
+    async def update_mastery(self, svc: MapService, data: MapMasteryCreateRequest) -> MapMasteryCreateResponse | None:
         """Create or update mastery data.
 
         Args:
@@ -796,7 +803,7 @@ class BaseMapsController(litestar.Controller):
         self,
         request: litestar.Request,
         svc: MapService,
-        data: ArchivalStatusPatchDTO,
+        data: ArchivalStatusPatchRequest,
         newsfeed: NewsfeedService,
     ) -> None:
         """Archive or unarchive one or more maps.
@@ -862,7 +869,7 @@ class BaseMapsController(litestar.Controller):
         summary="Override Quality Votes",
         description="Overrides quality votes for a specific map.",
     )
-    async def override_quality_votes(self, svc: MapService, code: OverwatchCode, data: QualityValueDTO) -> None:
+    async def override_quality_votes(self, svc: MapService, code: OverwatchCode, data: QualityValueRequest) -> None:
         """Overwrite quality votes for a map.
 
         Args:
@@ -881,7 +888,7 @@ class BaseMapsController(litestar.Controller):
         self,
         svc: MapService,
         limit: Literal[1, 3, 5, 10, 15, 20, 25],
-    ) -> list[TrendingMapReadDTO]:
+    ) -> list[TrendingMapResponse]:
         """Get the trending maps.
 
         Args:
@@ -900,8 +907,8 @@ class BaseMapsController(litestar.Controller):
         request: litestar.Request,
         code: OverwatchCode,
         svc: MapService,
-        data: SendToPlaytestDTO,
-    ) -> JobStatus:
+        data: SendToPlaytestRequest,
+    ) -> JobStatusResponse:
         """Send a map back to playtest."""
         return await svc.send_map_to_playtest(code=code, data=data, request=request)
 
@@ -916,8 +923,8 @@ class BaseMapsController(litestar.Controller):
         svc: MapService,
         newsfeed: NewsfeedService,
         jobs: InternalJobsService,
-        data: LinkMapsCreateDTO,
-    ) -> JobStatus | None:
+        data: LinkMapsCreateRequest,
+    ) -> JobStatusResponse | None:
         """Link an official and unofficial map and publish a newsfeed event.
 
         Links two map codes through the MapService. If a new playtest or clone needs
@@ -981,7 +988,7 @@ class BaseMapsController(litestar.Controller):
         request: litestar.Request,
         svc: MapService,
         newsfeed: NewsfeedService,
-        data: UnlinkMapsCreateDTO,
+        data: UnlinkMapsCreateRequest,
     ) -> None:
         """Unlink two map codes."""
         await svc.unlink_two_map_codes(
@@ -1002,7 +1009,7 @@ async def wait_and_publish_newsfeed(  # noqa: PLR0913
     svc: MapService,
     jobs: InternalJobsService,
     newsfeed: NewsfeedService,
-    status: JobStatus,
+    status: JobStatusResponse,
     event: NewsfeedEvent,
     headers: Headers,
 ) -> None:

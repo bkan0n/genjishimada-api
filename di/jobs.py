@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from asyncpg import Connection
-from genjipk_sdk.models import JobStatus, JobUpdate
+from genjipk_sdk.internal import JobStatusResponse, JobStatusUpdateRequest
 from litestar.datastructures import State
 from litestar.exceptions import HTTPException
 
@@ -12,7 +12,7 @@ from .base import BaseService
 
 
 class InternalJobsService(BaseService):
-    async def get_job(self, job_id: uuid.UUID) -> JobStatus:
+    async def get_job(self, job_id: uuid.UUID) -> JobStatusResponse:
         """Get job status."""
         row = await self._conn.fetchrow(
             "SELECT id, status::text, error_code, error_msg FROM public.jobs WHERE id=$1",
@@ -20,9 +20,11 @@ class InternalJobsService(BaseService):
         )
         if not row:
             raise HTTPException(404, "Job not found.")
-        return JobStatus(id=row["id"], status=row["status"], error_code=row["error_code"], error_msg=row["error_msg"])
+        return JobStatusResponse(
+            id=row["id"], status=row["status"], error_code=row["error_code"], error_msg=row["error_msg"]
+        )
 
-    async def get_job_using_pool(self, job_id: uuid.UUID) -> JobStatus:
+    async def get_job_using_pool(self, job_id: uuid.UUID) -> JobStatusResponse:
         """Get job status."""
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -31,11 +33,11 @@ class InternalJobsService(BaseService):
             )
             if not row:
                 raise HTTPException(404, "Job not found.")
-            return JobStatus(
+            return JobStatusResponse(
                 id=row["id"], status=row["status"], error_code=row["error_code"], error_msg=row["error_msg"]
             )
 
-    async def update_job(self, job_id: uuid.UUID, data: JobUpdate) -> None:
+    async def update_job(self, job_id: uuid.UUID, data: JobStatusUpdateRequest) -> None:
         """Update job status."""
         now = datetime.now(timezone.utc)
         sets = {

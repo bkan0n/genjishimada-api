@@ -1,18 +1,16 @@
 from typing import Annotated, Literal
 
-from genjipk_sdk.models import (
-    CommunityLeaderboardReadDTO,
+from genjipk_sdk.completions import MapRecordProgressionResponse, TimePlayedPerRankResponse
+from genjipk_sdk.maps import (
     MapCompletionStatisticsResponse,
     MapCountsResponse,
     MapPerDifficultyStatisticsResponse,
-    MapRecordProgressionResponse,
-    PlayersPerSkillTierResponse,
-    PlayersPerXPTierResponse,
+    OverwatchCode,
     PopularMapsStatisticsResponse,
-    TimePlayedPerRankResponse,
     TopCreatorsResponse,
 )
-from genjipk_sdk.utilities._types import OverwatchCode
+from genjipk_sdk.users import CommunityLeaderboardResponse
+from genjipk_sdk.xp import PlayersPerSkillTierResponse, PlayersPerXPTierResponse
 from litestar import Controller, get
 from litestar.params import Parameter
 
@@ -52,7 +50,7 @@ class CommunityController(Controller):
         sort_direction: Literal["asc", "desc"] = "asc",
         page_size: Literal[10, 20, 25, 50] = 10,
         page_number: Annotated[int, Parameter(ge=1)] = 1,
-    ) -> list[CommunityLeaderboardReadDTO]:
+    ) -> list[CommunityLeaderboardResponse]:
         """Retrieve leaderboard rows with filters, sorting, and pagination.
 
         Args:
@@ -66,7 +64,7 @@ class CommunityController(Controller):
             page_number: 1-based page number.
 
         Returns:
-            list[CommunityLeaderboardReadDTO]: Paged leaderboard results.
+            list[CommunityLeaderboardResponse]: Paged leaderboard results.
         """
         return await svc.get_community_leaderboard(
             name,

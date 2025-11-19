@@ -4,7 +4,7 @@ from typing import Optional, get_args
 
 import kaleido  # noqa: F401
 import plotly.graph_objects as go
-from genjipk_sdk.utilities import DIFFICULTY_COLORS, DIFFICULTY_MIDPOINTS, DIFFICULTY_RANGES_ALL, DifficultyAll
+from genjipk_sdk.difficulties import DIFFICULTY_COLORS, DIFFICULTY_MIDPOINTS, DIFFICULTY_RANGES_ALL, DifficultyAll
 
 
 class DifficultyRadarPlotter:

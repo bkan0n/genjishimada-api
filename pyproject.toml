@@ -8,7 +8,7 @@ dependencies = [
     "aio-pika>=9.5.5",
     "aiohttp>=3.12.14",
     "boto3>=1.40.25",
-    "genjipk-sdk",
+    "genjipk-sdk>=2.1.2",
     "kaleido==0.2.1",
     "litestar-asyncpg>=0.4.0",
     "litestar[standard]>=2.16.0",
@@ -74,6 +74,3 @@ lint.ignore = [
 ]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.uv.sources]
-genjipk-sdk = { git = "https://github.com/bkan0n/genjipk-sdk", rev="1ab099d03cce5d4228d2625001a9234d94a5d639" }

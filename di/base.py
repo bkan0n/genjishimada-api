@@ -6,7 +6,7 @@ from uuid import uuid4
 import aio_pika
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import JobStatus
+from genjipk_sdk.internal import JobStatusResponse
 from litestar.datastructures import Headers, State
 
 log = getLogger(__name__)
@@ -48,7 +48,7 @@ class BaseService:
         headers: Headers,
         idempotency_key: str | None = None,
         use_pool: bool = False,
-    ) -> JobStatus:
+    ) -> JobStatusResponse:
         """Publish a message to RabbitMQ.
 
         Args:
@@ -56,6 +56,7 @@ class BaseService:
             routing_key (str, optional): The RabbitMQ message routing key.
             headers (dict, optional): Headers.
             correlation_id (UUID): A job id.
+            idempotency_key (str, optional): The idempotency key for this transaction.
             use_pool (bool): Whether or not to use a pool for the connection.
         """
         if routing_key not in IGNORE_IDEMPOTENCY and not idempotency_key:
@@ -64,7 +65,7 @@ class BaseService:
 
         if headers.get("X-PYTEST-ENABLED") == "1":
             log.debug("Pytest in progress, skipping queue.")
-            return JobStatus(uuid4(), "succeeded")
+            return JobStatusResponse(uuid4(), "succeeded")
 
         log.info("[→] Preparing to publish RabbitMQ message")
         log.debug("Routing key: %s", routing_key)
@@ -99,7 +100,7 @@ class BaseService:
                     routing_key=routing_key,
                 )
                 log.info("[✓] Published RabbitMQ message to queue '%s'", routing_key)
-                return JobStatus(id=job_id, status="queued")
+                return JobStatusResponse(id=job_id, status="queued")
             except Exception:
                 log.exception("[!] Failed to publish message to RabbitMQ queue '%s'", routing_key)
-                return JobStatus(job_id, "failed", "", "Failed to send message.")
+                return JobStatusResponse(job_id, "failed", "", "Failed to send message.")

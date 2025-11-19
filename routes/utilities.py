@@ -7,9 +7,8 @@ from typing import Annotated, Any
 
 import msgspec
 from asyncpg import Connection
-from genjipk_sdk.models import LogCreateDTO
-from genjipk_sdk.models.logging import MapClickCreateDTO
-from genjipk_sdk.utilities._types import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
+from genjipk_sdk.logs import LogCreateRequest, MapClickCreateRequest
+from genjipk_sdk.maps import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
 from litestar import Controller, MediaType, get, post
 from litestar.datastructures import UploadFile
 from litestar.di import Provide
@@ -282,7 +281,7 @@ class UtilitiesController(Controller):
         return await autocomplete.get_similar_users(search, limit, fake_users_only)
 
     @post(path="/log", include_in_schema=False)
-    async def log_analytics(self, conn: Connection, data: LogCreateDTO) -> None:
+    async def log_analytics(self, conn: Connection, data: LogCreateRequest) -> None:
         """Log Discord interaction command information."""
         query = """
             INSERT INTO public.analytics (command_name, user_id,  created_at, namespace)
@@ -296,7 +295,7 @@ class UtilitiesController(Controller):
         description="Log when a user clicks ona Map Code Copy button.",
         tags=["Utilities"],
     )
-    async def log_map_clicks(self, conn: Connection, data: MapClickCreateDTO) -> None:
+    async def log_map_clicks(self, conn: Connection, data: MapClickCreateRequest) -> None:
         """Log the click on a 'copy code' button on the website."""
         secret = os.getenv("IP_HASH_SECRET", "").encode("utf-8")
         ip_hash = hmac.new(secret, data.ip_address.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -314,10 +313,8 @@ class UtilitiesController(Controller):
         path="/log-map-click",
         tags=["Utilities"],
     )
-    async def get_log_map_clicks(
-        self,
-        conn: Connection,
-    ) -> Any:
+    async def get_log_map_clicks(self, conn: Connection) -> Any:  # noqa: ANN401
+        """Get log clicks. DEBUG ONLY."""
         query = """
             SELECT id, map_id, user_id, source, user_agent, ip_hash, inserted_at, day_bucket
             FROM maps.clicks ORDER BY inserted_at DESC LIMIT 100;

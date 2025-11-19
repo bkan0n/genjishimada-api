@@ -1,16 +1,10 @@
 from typing import NamedTuple
 
 import asyncpg
-from genjipk_sdk.models import (
-    AvatarResponse,
-    BackgroundResponse,
-    RankCardData,
-    RankDetailReadDTO,
-)
-from genjipk_sdk.models.rank_card import RankCardBadgeSettings
-from genjipk_sdk.utilities import DIFFICULTY_TO_RANK_MAP
-from genjipk_sdk.utilities._types import Rank
-from genjipk_sdk.utilities.lootbox import sanitize_string
+from genjipk_sdk.difficulties import DIFFICULTY_TO_RANK_MAP, Rank
+from genjipk_sdk.helpers import sanitize_string
+from genjipk_sdk.rank_card import AvatarResponse, BackgroundResponse, RankCardBadgeSettings, RankCardResponse
+from genjipk_sdk.users import RankDetailResponse
 from litestar.datastructures import State
 
 from utilities.shared_queries import get_map_mastery_data, get_user_rank_data
@@ -237,7 +231,7 @@ class RankCardService(BaseService):
         assert row
         return XPData(row["xp"], row["prestige_level"], row["community_rank"])
 
-    def _find_highest_rank(self, data: list[RankDetailReadDTO]) -> Rank:
+    def _find_highest_rank(self, data: list[RankDetailResponse]) -> Rank:
         """Determine the highest rank achieved by a user.
 
         Args:
@@ -374,7 +368,7 @@ class RankCardService(BaseService):
         query = "SELECT name FROM rank_card.background WHERE user_id = $1"
         return await self._conn.fetchval(query, user_id) or "placeholder"
 
-    async def fetch_rank_card_data(self, user_id: int) -> RankCardData:
+    async def fetch_rank_card_data(self, user_id: int) -> RankCardResponse:
         """Assemble all rank card data for a user.
 
         Args:
@@ -421,7 +415,7 @@ class RankCardService(BaseService):
 
         for total in totals:
             data["difficulties"][total["base_difficulty"]]["total"] = total["total"]
-        _d = RankCardData(**data)
+        _d = RankCardResponse(**data)
         return _d
 
 

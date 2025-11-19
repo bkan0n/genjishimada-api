@@ -1,14 +1,12 @@
-from genjipk_sdk.models import (
+from genjipk_sdk.lootbox import (
     LootboxKeyType,
     LootboxKeyTypeResponse,
     RewardTypeResponse,
-    TierChange,
-    UserLootboxKeyAmountsResponse,
-    UserRewardsResponse,
-    XpGrant,
-    XpGrantResult,
+    UserLootboxKeyAmountResponse,
+    UserRewardResponse,
 )
-from genjipk_sdk.models.maps import XPMultiplierDTO
+from genjipk_sdk.maps import XPMultiplierRequest
+from genjipk_sdk.xp import TierChangeResponse, XpGrantRequest, XpGrantResponse
 from litestar import Controller, Request, get, patch, post
 from litestar.di import Provide
 
@@ -84,7 +82,7 @@ class LootboxController(Controller):
         reward_type: str | None = None,
         key_type: LootboxKeyType | None = None,
         rarity: str | None = None,
-    ) -> list[UserRewardsResponse]:
+    ) -> list[UserRewardResponse]:
         """Retrieve rewards owned by a user.
 
         Args:
@@ -110,7 +108,7 @@ class LootboxController(Controller):
         svc: LootboxService,
         user_id: int,
         key_type: LootboxKeyType | None = None,
-    ) -> list[UserLootboxKeyAmountsResponse]:
+    ) -> list[UserLootboxKeyAmountResponse]:
         """Retrieve keys owned by a user.
 
         Args:
@@ -279,7 +277,9 @@ class LootboxController(Controller):
         summary="Grant XP to User",
         description="Add XP to a user and return their previous and new totals.",
     )
-    async def grant_user_xp(self, request: Request, svc: LootboxService, user_id: int, data: XpGrant) -> XpGrantResult:
+    async def grant_user_xp(
+        self, request: Request, svc: LootboxService, user_id: int, data: XpGrantRequest
+    ) -> XpGrantResponse:
         """Grant XP to a user.
 
         Args:
@@ -299,7 +299,7 @@ class LootboxController(Controller):
         summary="Get XP Tier Change",
         description="Calculate whether a user's tier or prestige has changed after gaining XP.",
     )
-    async def get_xp_tier_change(self, svc: LootboxService, old_xp: int, new_xp: int) -> TierChange:
+    async def get_xp_tier_change(self, svc: LootboxService, old_xp: int, new_xp: int) -> TierChangeResponse:
         """Calculate a user's tier change after an XP update.
 
         Args:
@@ -318,7 +318,7 @@ class LootboxController(Controller):
         summary="Change XP Multiplier",
         description="Change the XP multiplier, e.g. double XP weekends.",
     )
-    async def edit_xp_multiplier(self, svc: LootboxService, data: XPMultiplierDTO) -> None:
+    async def edit_xp_multiplier(self, svc: LootboxService, data: XPMultiplierRequest) -> None:
         """Change the XP Multiplier.
 
         Args:

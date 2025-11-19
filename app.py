@@ -153,7 +153,6 @@ def create_app(psql_dsn: str | None = None) -> Litestar:
         root={"level": "INFO", "handlers": ["queue_listener"]},
         formatters={"standard": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}},
         log_exceptions="always",
-        # disable_stack_trace={404, ValidationError, ValidationException, CustomHTTPException},
     )
 
     auth_middleware = DefineMiddleware(CustomAuthenticationMiddleware, exclude=["docs"])

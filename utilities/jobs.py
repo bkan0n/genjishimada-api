@@ -4,19 +4,19 @@ import random
 from typing import Awaitable, Callable
 from uuid import UUID
 
-from genjipk_sdk.models import JobStatus
+from genjipk_sdk.internal import JobStatusResponse
 
 log = logging.getLogger(__name__)
 
 
 async def wait_for_job_completion(
     job_id: UUID,
-    fetch_status: Callable[[UUID], Awaitable[JobStatus | None]],
+    fetch_status: Callable[[UUID], Awaitable[JobStatusResponse | None]],
     *,
     timeout: float = 60.0,  # noqa: ASYNC109
     base_interval: float = 0.25,
     max_interval: float = 2.0,
-) -> JobStatus:
+) -> JobStatusResponse:
     """Poll the database until a JobStatus reaches a terminal state.
 
     Args:

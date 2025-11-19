@@ -4,7 +4,7 @@ import logging
 from typing import cast
 
 from asyncpg import Connection
-from genjipk_sdk.utilities._types import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
+from genjipk_sdk.maps import Mechanics, OverwatchCode, OverwatchMap, PlaytestStatus, Restrictions
 from litestar.datastructures import State
 
 from di.base import BaseService
@@ -179,6 +179,7 @@ class AutocompleteService(BaseService):
             archived (bool | None, optional): Filter by archived flag, or `None` for no filter.
             hidden (bool | None, optional): Filter by hidden flag, or `None` for no filter.
             playtesting (PlaytestStatus | None, optional): Filter by playtesting status, or `None` for no filter.
+            use_pool (bool): Use a pool instead of a route-based connection.
 
         Returns:
             OverwatchCode | None: The closest matching map code, or `None` if none found.
@@ -220,6 +221,7 @@ class AutocompleteService(BaseService):
             search (str): Input string to compare.
             limit (int, optional): Maximum number of results. Defaults to 10.
             fake_users_only (bool): Filter out actualy discord users and display fake members only.
+            use_pool (bool): Use a pool instead of a route-based connection.
 
         Returns:
             list[tuple[int, str]] | None: A list of `(user_id, display_name)` tuples, or `None` if no matches found.
