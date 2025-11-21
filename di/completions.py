@@ -686,9 +686,10 @@ class CompletionsService(BaseService):
         JOIN name_split ns ON ns.user_id = wm.user_id
         ORDER BY wm.code,
             CASE
-                WHEN wm.rank IS NOT NULL THEN 0           -- rankable first
-                WHEN wm.legacy          = FALSE THEN 1    -- non-rankable, non-legacy
-                ELSE 2                                     -- legacy last
+                WHEN wm.legacy = FALSE AND wm.rank IS NOT NULL THEN 0  -- non-legacy rankable
+                WHEN wm.legacy = FALSE AND wm.rank IS NULL     THEN 1  -- non-legacy non-rankable
+                WHEN wm.legacy = TRUE  AND wm.rank IS NOT NULL THEN 2  -- legacy rankable
+                ELSE 3                                                 -- legacy non-rankable
             END,
             wm.time,           -- best time first
             wm.inserted_at    -- tie-breaker - older submission first
