@@ -213,6 +213,7 @@ class AutocompleteService(BaseService):
         limit: int = 10,
         fake_users_only: bool = False,
         use_pool: bool = False,
+        ignore_fake_users: bool = False,
     ) -> list[tuple[int, str]] | None:
         """Get similar users by nickname, global name, or Overwatch username.
 
@@ -222,6 +223,7 @@ class AutocompleteService(BaseService):
             limit (int, optional): Maximum number of results. Defaults to 10.
             fake_users_only (bool): Filter out actualy discord users and display fake members only.
             use_pool (bool): Use a pool instead of a route-based connection.
+            ignore_fake_users: Ignore fake users
 
         Returns:
             list[tuple[int, str]] | None: A list of `(user_id, display_name)` tuples, or `None` if no matches found.
@@ -234,13 +236,13 @@ class AutocompleteService(BaseService):
             CROSS JOIN LATERAL (
                 VALUES (u.nickname), (u.global_name)
             ) AS name_list(name)
-            WHERE $3 IS FALSE OR id < 10000000000000
+            WHERE ($3 IS FALSE OR id < 10000000000000) AND ($4 IS FALSE OR id > 10000000000000)
 
             UNION ALL
 
             SELECT o.user_id, o.username AS name, similarity(o.username, $1) AS sim
             FROM users.overwatch_usernames o
-            WHERE $3 IS FALSE OR user_id < 10000000000000
+            WHERE ($3 IS FALSE OR user_id < 10000000000000) AND ($4 IS FALSE OR user_id > 10000000000000)
         ),
         ranked_users AS (
             SELECT user_id, MAX(sim) AS sim
@@ -275,9 +277,9 @@ class AutocompleteService(BaseService):
         """
         if use_pool:
             async with self._pool.acquire() as conn:
-                res = await conn.fetch(query, search, limit, fake_users_only)
+                res = await conn.fetch(query, search, limit, fake_users_only, ignore_fake_users)
         else:
-            res = await self._conn.fetch(query, search, limit, fake_users_only)
+            res = await self._conn.fetch(query, search, limit, fake_users_only, ignore_fake_users)
         if not res:
             return None
         return [(r["user_id"], r["name"]) for r in res]

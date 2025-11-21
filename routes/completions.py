@@ -433,7 +433,9 @@ async def _attempt_auto_verify(
         ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrResponse)
 
     extracted = ocr_data.extracted
-    extracted_user_cleaned = await autocomplete.get_similar_users(extracted.name or "", use_pool=True)
+    extracted_user_cleaned = await autocomplete.get_similar_users(
+        extracted.name or "", use_pool=True, ignore_fake_users=True
+    )
     extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
     if extracted_code_cleaned:
         extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
