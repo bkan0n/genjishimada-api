@@ -685,7 +685,11 @@ class CompletionsService(BaseService):
         FROM with_map wm
         JOIN name_split ns ON ns.user_id = wm.user_id
         ORDER BY wm.code,
-            (wm.rank IS NULL), -- rankable first
+            CASE
+                WHEN wm.rank IS NOT NULL THEN 0           -- rankable first
+                WHEN wm.legacy          = FALSE THEN 1    -- non-rankable, non-legacy
+                ELSE 2                                     -- legacy last
+            END,
             wm.time,           -- best time first
             wm.inserted_at    -- tie-breaker - older submission first
         {"LIMIT $2" if page_size else ""}
