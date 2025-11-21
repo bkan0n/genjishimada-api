@@ -126,6 +126,8 @@ class CompletionsController(Controller):
 
         """
         completion_id = await svc.submit_completion(data)
+        if not completion_id:
+            raise ValueError("Some how completion ID is null?")
 
         if not data.video:
             task = asyncio.create_task(
