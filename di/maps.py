@@ -354,8 +354,8 @@ class MapSearchSQLBuilder:
 
         """
         if self._filters.code:
+            self._where_clauses.append(f"m.code = ${next(self._counter)}")
             self._params.append(self._filters.code)
-            return f"WHERE m.code = ${next(self._counter)}"
 
         if self._filters.playtesting:
             self._where_clauses.append(f"m.playtesting = ${next(self._counter)}")
