@@ -5,6 +5,7 @@ from typing import Literal
 
 import aiohttp
 import msgspec
+from asyncpg import Connection
 from genjipk_sdk.completions import (
     CompletionCreatedEvent,
     CompletionCreateRequest,
@@ -28,13 +29,14 @@ from genjipk_sdk.maps import OverwatchCode
 from litestar import Controller, Request, get, patch, post, put
 from litestar.datastructures import State
 from litestar.di import Provide
-from litestar.status_codes import HTTP_400_BAD_REQUEST
+from litestar.status_codes import HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
 
 from di import (
     AutocompleteService,
     CompletionsService,
     provide_autocomplete_service,
     provide_completions_service,
+    provide_map_service,
     provide_user_service,
 )
 from utilities.errors import CustomHTTPException
@@ -52,6 +54,7 @@ class CompletionsController(Controller):
     dependencies = {
         "svc": Provide(provide_completions_service),
         "users": Provide(provide_user_service),
+        "maps": Provide(provide_map_service),
         "autocomplete": Provide(provide_autocomplete_service),
     }
 
@@ -112,6 +115,7 @@ class CompletionsController(Controller):
         request: Request,
         data: CompletionCreateRequest,
         autocomplete: AutocompleteService,
+        conn: Connection,
     ) -> CompletionSubmissionJobResponse:
         """Submit a new completion.
 
@@ -125,6 +129,12 @@ class CompletionsController(Controller):
             int: ID of the newly inserted completion.
 
         """
+        query = """
+            SELECT EXISTS(SELECT 1 FROM core.maps WHERE code=$1);
+        """
+        if not await conn.fetchval(query, data.code):
+            raise CustomHTTPException(status_code=HTTP_404_NOT_FOUND, detail="This map code does not exist.")
+
         completion_id = await svc.submit_completion(data)
         if not completion_id:
             raise ValueError("Some how completion ID is null?")
