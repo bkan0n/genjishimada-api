@@ -130,10 +130,12 @@ class CompletionsController(Controller):
 
         """
         query = """
-            SELECT EXISTS(SELECT 1 FROM core.maps WHERE code=$1);
+            SELECT EXISTS(SELECT 1 FROM core.maps WHERE code=$1 and archived=FALSE);
         """
         if not await conn.fetchval(query, data.code):
-            raise CustomHTTPException(status_code=HTTP_404_NOT_FOUND, detail="This map code does not exist.")
+            raise CustomHTTPException(
+                status_code=HTTP_404_NOT_FOUND, detail="This map code does not exist or has been archived."
+            )
 
         completion_id = await svc.submit_completion(data)
         if not completion_id:
