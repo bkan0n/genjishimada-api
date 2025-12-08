@@ -1598,285 +1598,89 @@ class MapService(BaseService):
         await self._conn.execute(query, map_id, data.value)
 
     async def get_trending_maps(self, limit: Literal[1, 3, 5, 10, 15, 20, 25]) -> list[TrendingMapResponse]:
-        """Get trending maps."""
-        query = """
-        WITH
-            params AS (
-                SELECT
-                    ($1)::int AS window_days,
-                    ($2)::numeric AS half_life_days,
-                    (ln(2) / NULLIF(($2)::numeric, 0))::numeric AS lambda
-            ),
-            bounds AS (
-                SELECT
-                    now() - make_interval(days => p.window_days)     AS curr_start,
-                    now()                                            AS curr_end,
-                    now() - make_interval(days => 2 * p.window_days) AS prev_start,
-                    now() - make_interval(days => p.window_days)     AS prev_end,
-                    p.lambda
-                FROM params p
-            ),
-            maps_base AS (
-                SELECT m.id, m.code, m.map_name, m.created_at
-                FROM core.maps m
-                WHERE m.hidden IS NOT TRUE AND m.archived IS NOT TRUE
-            ),
+        """Return trending maps using a minimal weighted sum."""
+        window_days = 14
+        window_start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=window_days)
 
-            -- ---- CURRENT WINDOW (decayed weights, per map) ----
-            clicks_curr AS (
-                WITH last_clicks AS (
-                    SELECT
-                        c.map_id,
-                        c.ip_hash,
-                        MAX(c.inserted_at) AS last_at
-                    FROM maps.clicks c
-                    CROSS JOIN bounds b
-                    WHERE c.inserted_at >= b.curr_start
-                      AND c.inserted_at <  b.curr_end
-                    GROUP BY c.map_id, c.ip_hash
+        map_rows = await self._conn.fetch(
+            "SELECT id, code, map_name FROM core.maps WHERE hidden IS NOT TRUE AND archived IS NOT TRUE"
+        )
+        click_rows = await self._conn.fetch(
+            dedent(
+                """
+                    SELECT map_id, COUNT(DISTINCT ip_hash) AS clicks
+                    FROM maps.clicks
+                    WHERE inserted_at >= $1
+                    GROUP BY map_id
+                    """
+            ),
+            window_start,
+        )
+        completion_rows = await self._conn.fetch(
+            dedent(
+                """
+                    SELECT map_id, COUNT(*) AS completions
+                    FROM core.completions
+                    WHERE inserted_at >= $1
+                      AND verified = TRUE
+                      AND COALESCE(legacy, FALSE) = FALSE
+                    GROUP BY map_id
+                    """
+            ),
+            window_start,
+        )
+        upvote_rows = await self._conn.fetch(
+            dedent(
+                """
+                SELECT c.map_id, COUNT(*) AS upvotes
+                FROM completions.upvotes u
+                JOIN core.completions c ON c.message_id = u.message_id
+                WHERE u.inserted_at >= $1
+                GROUP BY c.map_id
+                """
+            ),
+            window_start,
+        )
+
+        metrics: dict[int, dict[str, Any]] = {}
+        for row in map_rows:
+            metrics[row["id"]] = {
+                "code": row["code"],
+                "map_name": row["map_name"],
+                "clicks": 0,
+                "completions": 0,
+                "upvotes": 0,
+            }
+
+        for row in click_rows:
+            if row["map_id"] in metrics:
+                metrics[row["map_id"]]["clicks"] = row["clicks"] or 0
+
+        for row in completion_rows:
+            if row["map_id"] in metrics:
+                metrics[row["map_id"]]["completions"] = row["completions"] or 0
+
+        for row in upvote_rows:
+            if row["map_id"] in metrics:
+                metrics[row["map_id"]]["upvotes"] = row["upvotes"] or 0
+
+        scored: list[TrendingMapResponse] = []
+        for data in metrics.values():
+            trend_score = (0.2 * data["clicks"]) + (1.0 * data["completions"]) + (1.5 * data["upvotes"])
+            scored.append(
+                TrendingMapResponse(
+                    code=data["code"],
+                    map_name=data["map_name"],
+                    clicks=data["clicks"],
+                    completions=data["completions"],
+                    upvotes=data["upvotes"],
+                    momentum=0,  # TODO
+                    trend_score=trend_score,
                 )
-                SELECT
-                    lc.map_id,
-                    SUM(
-                            exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - lc.last_at)) / 86400.0)
-                    )::numeric AS w_clicks
-                FROM last_clicks lc
-                CROSS JOIN bounds b
-                GROUP BY lc.map_id
-            ),
-
-            comps_curr AS (
-                SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - c.inserted_at)) / 86400.0))::numeric
-                    AS w_completions
-                FROM core.completions c
-                CROSS JOIN bounds b
-                WHERE c.inserted_at >= b.curr_start AND c.inserted_at < b.curr_end
-                  AND c.verified = TRUE
-                  AND COALESCE(c.legacy, FALSE) = FALSE
-                -- AND c.completion = TRUE  -- add back if reliably set
-                GROUP BY c.map_id
-            ),
-            ups_curr AS (
-                SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.curr_end - u.inserted_at)) / 86400.0))::numeric
-                    AS w_upvotes
-                FROM completions.upvotes u
-                JOIN core.completions c ON c.message_id = u.message_id
-                CROSS JOIN bounds b
-                WHERE u.inserted_at >= b.curr_start AND u.inserted_at < b.curr_end
-                GROUP BY c.map_id
-            ),
-            -- Quality: all-time with decay (no time filter)
-            q_curr AS (
-                SELECT r.map_id,
-                    SUM(r.quality * exp(-b.lambda * EXTRACT(
-                        EPOCH FROM (b.curr_end - GREATEST(r.updated_at, r.created_at))) / 86400.0)
-                    )::numeric AS num,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (
-                        b.curr_end - GREATEST(r.updated_at, r.created_at))) / 86400.0)
-                    )::numeric AS den
-                FROM maps.ratings r
-                CROSS JOIN bounds b
-                GROUP BY r.map_id
-            ),
-
-            -- ---- CURRENT WINDOW (RAW COUNTS to return) ----
-            clicks_cnt_curr AS (
-                SELECT
-                    c.map_id,
-                    COUNT(DISTINCT c.ip_hash)::int AS clicks_count
-                FROM maps.clicks c
-                CROSS JOIN bounds b
-                WHERE c.inserted_at >= b.curr_start AND c.inserted_at < b.curr_end
-                GROUP BY c.map_id
-            ),
-            comps_cnt_curr AS (
-                SELECT c.map_id, COUNT(*)::int AS completions_count
-                FROM core.completions c
-                CROSS JOIN bounds b
-                WHERE c.inserted_at >= b.curr_start AND c.inserted_at < b.curr_end
-                  AND c.verified = TRUE
-                  AND COALESCE(c.legacy, FALSE) = FALSE
-                -- AND c.completion = TRUE
-                GROUP BY c.map_id
-            ),
-            ups_cnt_curr AS (
-                SELECT c.map_id, COUNT(u.id)::int AS upvotes_count
-                FROM completions.upvotes u
-                JOIN core.completions c ON c.message_id = u.message_id
-                CROSS JOIN bounds b
-                WHERE u.inserted_at >= b.curr_start AND u.inserted_at < b.curr_end
-                GROUP BY c.map_id
-            ),
-
-            -- ---- PREVIOUS WINDOW (for momentum) ----
-            clicks_prev AS (
-                WITH last_clicks AS (
-                    SELECT
-                        c.map_id,
-                        c.ip_hash,
-                        MAX(c.inserted_at) AS last_at
-                    FROM maps.clicks c
-                    CROSS JOIN bounds b
-                    WHERE c.inserted_at >= b.prev_start
-                      AND c.inserted_at <  b.prev_end
-                    GROUP BY c.map_id, c.ip_hash
-                )
-                SELECT
-                    lc.map_id,
-                    SUM(
-                            exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - lc.last_at)) / 86400.0)
-                    )::numeric AS w_clicks_prev
-                FROM last_clicks lc
-                CROSS JOIN bounds b
-                GROUP BY lc.map_id
-            ),
-
-            comps_prev AS (
-                SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - c.inserted_at)) / 86400.0))::numeric
-                    AS w_completions_prev
-                FROM core.completions c
-                CROSS JOIN bounds b
-                WHERE c.inserted_at >= b.prev_start AND c.inserted_at < b.prev_end
-                  AND c.verified = TRUE
-                  AND COALESCE(c.legacy, FALSE) = FALSE
-                GROUP BY c.map_id
-            ),
-            ups_prev AS (
-                SELECT c.map_id,
-                    SUM(exp(-b.lambda * EXTRACT(EPOCH FROM (b.prev_end - u.inserted_at)) / 86400.0))::numeric
-                    AS w_upvotes_prev
-                FROM completions.upvotes u
-                JOIN core.completions c ON c.message_id = u.message_id
-                CROSS JOIN bounds b
-                WHERE u.inserted_at >= b.prev_start AND u.inserted_at < b.prev_end
-                GROUP BY c.map_id
-            ),
-
-            -- ---- Assemble current & previous per map ----
-            agg_curr AS (
-                SELECT
-                    mb.id AS map_id,
-                    mb.code,
-                    mb.map_name,
-                    mb.created_at,
-                    COALESCE(cc.w_clicks, 0)      AS w_clicks,
-                    COALESCE(co.w_completions, 0) AS w_completions,
-                    COALESCE(uu.w_upvotes, 0)     AS w_upvotes,
-                    CASE WHEN qc.den > 0 THEN qc.num / qc.den ELSE NULL END AS w_quality,
-                    COALESCE(cct.clicks_count, 0)      AS clicks_count,
-                    COALESCE(cot.completions_count, 0) AS completions_count,
-                    COALESCE(uut.upvotes_count, 0)     AS upvotes_count
-                FROM maps_base mb
-                LEFT JOIN clicks_curr     cc  ON cc.map_id  = mb.id
-                LEFT JOIN comps_curr      co  ON co.map_id  = mb.id
-                LEFT JOIN ups_curr        uu  ON uu.map_id  = mb.id
-                LEFT JOIN q_curr          qc  ON qc.map_id  = mb.id
-                LEFT JOIN clicks_cnt_curr cct ON cct.map_id = mb.id
-                LEFT JOIN comps_cnt_curr  cot ON cot.map_id = mb.id
-                LEFT JOIN ups_cnt_curr    uut ON uut.map_id = mb.id
-            ),
-            agg_prev AS (
-                SELECT
-                    mb.id AS map_id,
-                    COALESCE(cc.w_clicks_prev, 0)      AS w_clicks_prev,
-                    COALESCE(co.w_completions_prev, 0) AS w_completions_prev,
-                    COALESCE(uu.w_upvotes_prev, 0)     AS w_upvotes_prev
-                FROM maps_base mb
-                LEFT JOIN clicks_prev cc ON cc.map_id = mb.id
-                LEFT JOIN comps_prev  co ON co.map_id = mb.id
-                LEFT JOIN ups_prev    uu ON uu.map_id = mb.id
-            ),
-
-            -- ---- p95s for normalization (current window only) ----
-            pcts AS (
-                SELECT
-                            percentile_disc(0.95) WITHIN GROUP (ORDER BY a.w_clicks)      AS p95_clicks,
-                            percentile_disc(0.95) WITHIN GROUP (ORDER BY a.w_completions) AS p95_completions,
-                            percentile_disc(0.95) WITHIN GROUP (ORDER BY a.w_upvotes)     AS p95_upvotes,
-                            percentile_disc(0.95) WITHIN GROUP (ORDER BY a.w_quality)     AS p95_quality
-                FROM agg_curr a
-            ),
-
-            -- ---- Normalize + momentum (for scoring only) ----
-            scored AS (
-                SELECT
-                    a.map_id, a.code, a.map_name, a.created_at,
-                    a.w_clicks, a.w_completions, a.w_upvotes, a.w_quality,
-                    a.clicks_count, a.completions_count, a.upvotes_count,
-                    LEAST(1.0, CASE WHEN p.p95_clicks      > 0 THEN log(1 + a.w_clicks)      / log(1 + p.p95_clicks)
-                    ELSE 0 END) AS n_clicks,
-                    LEAST(1.0, CASE WHEN p.p95_completions > 0 THEN log(1 + a.w_completions) / log(1 + p.p95_completions
-                    )
-                    ELSE 0 END) AS n_completions,
-                    LEAST(1.0, CASE WHEN p.p95_upvotes     > 0 THEN log(1 + a.w_upvotes)     / log(1 + p.p95_upvotes)
-                    ELSE 0 END) AS n_upvotes,
-                    LEAST(1.0, CASE WHEN p.p95_quality     > 0 AND a.w_quality IS NOT NULL
-                                        THEN log(1 + a.w_quality)     / log(1 + p.p95_quality)     ELSE 0 END
-                            ) AS n_quality
-                FROM agg_curr a CROSS JOIN pcts p
-            ),
-            momentum AS (
-                SELECT
-                    s.map_id,
-                    (s.w_clicks + s.w_completions + s.w_upvotes) AS curr_vol,
-                    (
-                        COALESCE(pv.w_clicks_prev,0) + COALESCE(pv.w_completions_prev,0) + COALESCE(pv.w_upvotes_prev,0)
-                    ) AS prev_vol
-                FROM scored s
-                LEFT JOIN agg_prev pv ON pv.map_id = s.map_id
-            ),
-            final AS (
-                SELECT
-                    s.*,
-                    CASE WHEN m.prev_vol > 0
-                    THEN (m.curr_vol - m.prev_vol) / m.prev_vol ELSE NULL END AS momentum_ratio,
-                    1.0 + 0.30 * exp(-EXTRACT(EPOCH FROM (now() - s.created_at)) / 86400.0 / 30.0)     AS new_map_boost
-                FROM scored s
-                JOIN momentum m ON m.map_id = s.map_id
             )
 
-        SELECT
-            code,
-            map_name,
-            -- raw counts for the current window
-            clicks_count       AS clicks,
-            completions_count  AS completions,
-            upvotes_count      AS upvotes,
-            -- extra context
-            GREATEST(0, COALESCE(momentum_ratio, 0)) AS momentum,
-            (
-                ($3 * n_clicks) +
-                ($4 * n_completions) +
-                ($5 * n_upvotes) +
-                ($6 * n_quality) +
-                ($7 * GREATEST(0, COALESCE(momentum_ratio, 0)))
-                ) * new_map_boost AS trend_score
-        FROM final
-        ORDER BY trend_score DESC
-        LIMIT $8;
-        """
-        window_days = 14
-        half_life_days = 3.0
-        w_clicks = 0.35
-        w_completions = 0.35
-        w_upvotes = 0.20
-        w_quality = 0.10
-        w_momentum = 0.20
-        rows = await self._conn.fetch(
-            query,
-            window_days,
-            half_life_days,
-            w_clicks,
-            w_completions,
-            w_upvotes,
-            w_quality,
-            w_momentum,
-            limit,
-        )
-        return msgspec.convert(rows, list[TrendingMapResponse])
+        scored.sort(key=lambda r: r.trend_score, reverse=True)
+        return scored[:limit]
 
     async def _link_two_map_codes(
         self,
