@@ -1,4 +1,3 @@
-import asyncio
 import datetime as dt
 import functools
 import itertools
@@ -1603,24 +1602,23 @@ class MapService(BaseService):
         window_days = 14
         window_start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=window_days)
 
-        map_rows, click_rows, completion_rows, upvote_rows = await asyncio.gather(
-            self._conn.fetch(
-                "SELECT id, code, map_name FROM core.maps WHERE hidden IS NOT TRUE AND archived IS NOT TRUE"
-            ),
-            self._conn.fetch(
-                dedent(
-                    """
+        map_rows = await self._conn.fetch(
+            "SELECT id, code, map_name FROM core.maps WHERE hidden IS NOT TRUE AND archived IS NOT TRUE"
+        )
+        click_rows = await self._conn.fetch(
+            dedent(
+                """
                     SELECT map_id, COUNT(DISTINCT ip_hash) AS clicks
                     FROM maps.clicks
                     WHERE inserted_at >= $1
                     GROUP BY map_id
                     """
-                ),
-                window_start,
             ),
-            self._conn.fetch(
-                dedent(
-                    """
+            window_start,
+        )
+        completion_rows = await self._conn.fetch(
+            dedent(
+                """
                     SELECT map_id, COUNT(*) AS completions
                     FROM core.completions
                     WHERE inserted_at >= $1
@@ -1628,21 +1626,20 @@ class MapService(BaseService):
                       AND COALESCE(legacy, FALSE) = FALSE
                     GROUP BY map_id
                     """
-                ),
-                window_start,
             ),
-            self._conn.fetch(
-                dedent(
-                    """
-                    SELECT c.map_id, COUNT(*) AS upvotes
-                    FROM completions.upvotes u
-                    JOIN core.completions c ON c.message_id = u.message_id
-                    WHERE u.inserted_at >= $1
-                    GROUP BY c.map_id
-                    """
-                ),
-                window_start,
+            window_start,
+        )
+        upvote_rows = await self._conn.fetch(
+            dedent(
+                """
+                SELECT c.map_id, COUNT(*) AS upvotes
+                FROM completions.upvotes u
+                JOIN core.completions c ON c.message_id = u.message_id
+                WHERE u.inserted_at >= $1
+                GROUP BY c.map_id
+                """
             ),
+            window_start,
         )
 
         metrics: dict[int, dict[str, Any]] = {}
