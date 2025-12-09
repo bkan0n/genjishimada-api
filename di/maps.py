@@ -1597,90 +1597,117 @@ class MapService(BaseService):
         """
         await self._conn.execute(query, map_id, data.value)
 
-    async def get_trending_maps(self, limit: Literal[1, 3, 5, 10, 15, 20, 25]) -> list[TrendingMapResponse]:
+    async def get_trending_maps(
+        self, limit: Literal[1, 3, 5, 10, 15, 20, 25], window_days: int = 14
+    ) -> list[TrendingMapResponse]:
         """Return trending maps using a minimal weighted sum."""
-        window_days = 14
         window_start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=window_days)
 
-        map_rows = await self._conn.fetch(
-            "SELECT id, code, map_name FROM core.maps WHERE hidden IS NOT TRUE AND archived IS NOT TRUE"
+        query = """
+        WITH base AS (
+            SELECT id, code, map_name
+            FROM core.maps
+            WHERE hidden IS NOT TRUE
+              AND archived IS NOT TRUE
+        ),
+
+        clicks AS (
+            SELECT
+                c.map_id,
+                COUNT(DISTINCT c.ip_hash) AS clicks
+            FROM maps.clicks c
+            WHERE c.inserted_at >= $1
+            GROUP BY c.map_id
+        ),
+
+        completions AS (
+            SELECT
+                c.map_id,
+                COUNT(*) AS completions
+            FROM core.completions c
+            WHERE c.inserted_at >= $1
+              AND c.verified = TRUE
+              AND COALESCE(c.legacy, FALSE) = FALSE
+            GROUP BY c.map_id
+        ),
+
+        upvotes AS (
+            SELECT
+                c.map_id,
+                COUNT(*) AS upvotes
+            FROM completions.upvotes u
+            JOIN core.completions c ON c.message_id = u.message_id
+            WHERE u.inserted_at >= $1
+            GROUP BY c.map_id
+        ),
+
+        metrics AS (
+            SELECT
+                b.id,
+                b.code,
+                b.map_name,
+                COALESCE(cl.clicks, 0)       AS clicks,
+                COALESCE(co.completions, 0)  AS completions,
+                COALESCE(u.upvotes, 0)       AS upvotes
+            FROM base b
+            LEFT JOIN clicks      cl ON cl.map_id = b.id
+            LEFT JOIN completions co ON co.map_id = b.id
+            LEFT JOIN upvotes     u  ON u.map_id  = b.id
+        ),
+
+        ratings AS (
+            SELECT
+                mr.map_id,
+                AVG(mr.quality) AS avg_rating,
+                COUNT(*)        AS rating_count
+            FROM maps.ratings mr
+            WHERE mr.verified = TRUE
+            GROUP BY mr.map_id
+        ),
+
+        metrics_scored AS (
+            SELECT
+                m.*,
+                (
+                    0.2 * m.clicks +
+                    1.0 * m.completions +
+                    1.5 * m.upvotes +
+                    0.75 * COALESCE(r.avg_rating, 0)
+                ) AS trend_score
+            FROM metrics m
+            LEFT JOIN ratings r ON r.map_id = m.id
+            WHERE (m.clicks + m.completions + m.upvotes) > 0
         )
-        click_rows = await self._conn.fetch(
-            dedent(
-                """
-                    SELECT map_id, COUNT(DISTINCT ip_hash) AS clicks
-                    FROM maps.clicks
-                    WHERE inserted_at >= $1
-                    GROUP BY map_id
-                    """
-            ),
-            window_start,
-        )
-        completion_rows = await self._conn.fetch(
-            dedent(
-                """
-                    SELECT map_id, COUNT(*) AS completions
-                    FROM core.completions
-                    WHERE inserted_at >= $1
-                      AND verified = TRUE
-                      AND COALESCE(legacy, FALSE) = FALSE
-                    GROUP BY map_id
-                    """
-            ),
-            window_start,
-        )
-        upvote_rows = await self._conn.fetch(
-            dedent(
-                """
-                SELECT c.map_id, COUNT(*) AS upvotes
-                FROM completions.upvotes u
-                JOIN core.completions c ON c.message_id = u.message_id
-                WHERE u.inserted_at >= $1
-                GROUP BY c.map_id
-                """
-            ),
-            window_start,
-        )
 
-        metrics: dict[int, dict[str, Any]] = {}
-        for row in map_rows:
-            metrics[row["id"]] = {
-                "code": row["code"],
-                "map_name": row["map_name"],
-                "clicks": 0,
-                "completions": 0,
-                "upvotes": 0,
-            }
+        SELECT
+            ms.id,
+            ms.code,
+            ms.map_name,
+            ms.clicks,
+            ms.completions,
+            ms.upvotes,
+            ms.trend_score,
+            r.avg_rating,
+            r.rating_count
+        FROM metrics_scored ms
+        LEFT JOIN ratings r ON r.map_id = ms.id
+        ORDER BY ms.trend_score DESC
+        LIMIT $2;
+        """
 
-        for row in click_rows:
-            if row["map_id"] in metrics:
-                metrics[row["map_id"]]["clicks"] = row["clicks"] or 0
-
-        for row in completion_rows:
-            if row["map_id"] in metrics:
-                metrics[row["map_id"]]["completions"] = row["completions"] or 0
-
-        for row in upvote_rows:
-            if row["map_id"] in metrics:
-                metrics[row["map_id"]]["upvotes"] = row["upvotes"] or 0
-
-        scored: list[TrendingMapResponse] = []
-        for data in metrics.values():
-            trend_score = (0.2 * data["clicks"]) + (1.0 * data["completions"]) + (1.5 * data["upvotes"])
-            scored.append(
-                TrendingMapResponse(
-                    code=data["code"],
-                    map_name=data["map_name"],
-                    clicks=data["clicks"],
-                    completions=data["completions"],
-                    upvotes=data["upvotes"],
-                    momentum=0,  # TODO
-                    trend_score=trend_score,
-                )
+        rows = await self._conn.fetch(query, window_start, limit)
+        return [
+            TrendingMapResponse(
+                code=row["code"],
+                map_name=row["map_name"],
+                clicks=row["clicks"],
+                completions=row["completions"],
+                upvotes=row["upvotes"],
+                momentum=0,
+                trend_score=row["trend_score"],
             )
-
-        scored.sort(key=lambda r: r.trend_score, reverse=True)
-        return scored[:limit]
+            for row in rows
+        ]
 
     async def _link_two_map_codes(
         self,
