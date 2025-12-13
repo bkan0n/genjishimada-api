@@ -436,42 +436,53 @@ async def _attempt_auto_verify(
     data: CompletionCreateRequest,
 ) -> None:
     hostname = "genjishimada-ocr" if os.getenv("API_ENVIRONMENT") == "production" else "genjishimada-ocr-dev"
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(f"http://{hostname}:8000/extract", json={"image_url": data.screenshot}) as resp,
-    ):
-        resp.raise_for_status()
-        raw_ocr_data = await resp.read()
-        ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrResponse)
+    try:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(f"http://{hostname}:8000/extract", json={"image_url": data.screenshot}) as resp,
+        ):
+            resp.raise_for_status()
+            raw_ocr_data = await resp.read()
+            ocr_data = msgspec.json.decode(raw_ocr_data, type=OcrResponse)
 
-    extracted = ocr_data.extracted
-    extracted_user_cleaned = await autocomplete.get_similar_users(
-        extracted.name or "", use_pool=True, ignore_fake_users=True
-    )
-    extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
-    if extracted_code_cleaned:
-        extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
-        extracted_user_id: int | None = extracted_user_cleaned[0][0] if extracted_user_cleaned else None
-
-    # --- Compute condition flags once ---
-    code_match = data.code == extracted_code_cleaned
-    time_match = data.time == extracted.time
-    user_match = extracted_user_id == data.user_id
-
-    log.debug(f"extracted: {extracted}")
-    log.debug(f"data: {data}")
-    log.debug(f"extracted_code_cleaned: {extracted_code_cleaned}")
-    log.debug(f"code_match: {code_match} ({data.code=} vs {extracted_code_cleaned=})")
-    log.debug(f"time_match: {time_match} ({data.time=} vs {extracted.time=})")
-    log.debug(f"user_match: {user_match} ({data.user_id=} vs {extracted_user_id=})")
-
-    if code_match and time_match and user_match:
-        verification_data = CompletionVerificationUpdateRequest(
-            verified_by=969632729643753482,
-            verified=True,
-            reason="Auto Verified by Genji Shimada.",
+        extracted = ocr_data.extracted
+        extracted_user_cleaned = await autocomplete.get_similar_users(
+            extracted.name or "", use_pool=True, ignore_fake_users=True
         )
-        await svc.verify_completion(request, completion_id, verification_data, use_pool=True)
+        extracted_code_cleaned = await autocomplete.transform_map_codes(extracted.code or "", use_pool=True)
+        if extracted_code_cleaned:
+            extracted_code_cleaned = extracted_code_cleaned.replace('"', "")
+            extracted_user_id: int | None = extracted_user_cleaned[0][0] if extracted_user_cleaned else None
+
+        # --- Compute condition flags once ---
+        code_match = data.code == extracted_code_cleaned
+        time_match = data.time == extracted.time
+        user_match = extracted_user_id == data.user_id
+
+        log.debug(f"extracted: {extracted}")
+        log.debug(f"data: {data}")
+        log.debug(f"extracted_code_cleaned: {extracted_code_cleaned}")
+        log.debug(f"code_match: {code_match} ({data.code=} vs {extracted_code_cleaned=})")
+        log.debug(f"time_match: {time_match} ({data.time=} vs {extracted.time=})")
+        log.debug(f"user_match: {user_match} ({data.user_id=} vs {extracted_user_id=})")
+
+        if code_match and time_match and user_match:
+            verification_data = CompletionVerificationUpdateRequest(
+                verified_by=969632729643753482,
+                verified=True,
+                reason="Auto Verified by Genji Shimada.",
+            )
+            await svc.verify_completion(request, completion_id, verification_data, use_pool=True)
+            return
+    except aiohttp.ClientConnectorDNSError:
+        idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
+        await svc.publish_message(
+            routing_key="api.completion.submission",
+            data=CompletionCreatedEvent(completion_id),
+            headers=request.headers,
+            idempotency_key=idempotency_key,
+            use_pool=True,
+        )
         return
 
     await svc.publish_message(
@@ -492,7 +503,6 @@ async def _attempt_auto_verify(
         idempotency_key=None,
         use_pool=True,
     )
-
     idempotency_key = f"completion:submission:{data.user_id}:{completion_id}"
     await svc.publish_message(
         routing_key="api.completion.submission",
@@ -501,4 +511,5 @@ async def _attempt_auto_verify(
         idempotency_key=idempotency_key,
         use_pool=True,
     )
+
     return
